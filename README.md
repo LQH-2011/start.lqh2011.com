@@ -7,7 +7,8 @@ Personal browser start page — minimalist, in the same style as the blog.
 - `index.html` — single self-contained page (inline CSS, no dependencies):
   - **Logo**: "LQH-2011" as 5×7 pixel-block glyphs (SVG `<use>` + `<rect>`), with a
     checkerboard-patterned block shadow offset down-right.
-  - **Search**: submits to `https://cn.bing.com/search?q=…` (change in the `<form action>`).
+  - **Search**: left-aligned input with a magnifier icon, submits to
+    `https://cn.bing.com/search?q=…` (change in the `<form action>`).
   - **Bookmarks**: edit the `<nav class="links">` list.
 
 ## Features
@@ -16,8 +17,8 @@ Personal browser start page — minimalist, in the same style as the blog.
   visual switcher and no OS `prefers-color-scheme` detection; the choice is saved in
   `localStorage` (`start.theme`) and restored on the next load. The block logo and its
   shadow adapt via CSS variables.
-- **Command mode**: type `aaa` in the search bar to enter command mode (a `❯` indicator
-  appears on the left; input switches to a left-aligned prompt). Then:
+- **Command mode**: type `aaa` in the search bar to enter command mode (the magnifier
+  icon is replaced by a `❯` indicator on the left; the input stays left-aligned). Then:
   - `b` — back to Bing (default)
   - `g` — Google
   - `d` — DeepSeek chat (`https://chat.deepseek.com/?q=…`)
