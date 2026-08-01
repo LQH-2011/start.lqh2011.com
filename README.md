@@ -12,10 +12,10 @@ Personal browser start page — minimalist, in the same style as the blog.
 
 ## Features
 
-- **Dark mode**: type `aaa` then `k` in the search bar to toggle dark mode for the
-  current session. There is no visual switcher, no persistence and no OS
-  `prefers-color-scheme` detection — the page always loads in light mode, exactly like
-  the original. The block logo and its shadow adapt via CSS variables.
+- **Dark mode**: type `aaa` then `k` in the search bar to toggle light/dark. There is no
+  visual switcher and no OS `prefers-color-scheme` detection; the choice is saved in
+  `localStorage` (`start.theme`) and restored on the next load. The block logo and its
+  shadow adapt via CSS variables.
 - **Command mode**: type `aaa` in the search bar to enter command mode (a `❯` indicator
   appears on the left; input switches to a left-aligned prompt). Then:
   - `b` — back to Bing (default)
@@ -24,8 +24,8 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `w` — Wikipedia
   - `k` — toggle light/dark mode (stays in command mode)
   Any other character exits command mode and keeps the text as a normal query; Enter in
-  command mode cancels it. The engine choice persists until you switch again (no reload
-  needed).
+  command mode cancels it. The engine choice is saved in `localStorage`
+  (`start.engine`) and restored on the next load.
 
 ## Editing the logo
 
