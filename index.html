@@ -58,6 +58,20 @@
     max-width: 440px;
     margin: 44px 0 36px;
   }
+  .cmd-indicator {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .search.cmd input {
+    text-align: left;
+    padding-left: 34px;
+  }
   .search input {
     -webkit-appearance: none;
     appearance: none;
@@ -95,20 +109,6 @@
     text-decoration: underline;
     text-underline-offset: 4px;
   }
-  .theme-toggle {
-    position: fixed;
-    top: 18px;
-    right: 22px;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    color: var(--muted);
-    font-size: 20px;
-    line-height: 1;
-    padding: 6px;
-    transition: color .15s ease;
-  }
-  .theme-toggle:hover { color: var(--ink); }
   .sr-only {
     position: absolute;
     width: 1px; height: 1px;
@@ -124,8 +124,6 @@
 </style>
 </head>
 <body>
-<button id="themeToggle" class="theme-toggle" type="button"
-        title="Alternar tema claro/oscuro" aria-label="Alternar tema claro/oscuro">◐</button>
 <main>
   <svg class="logo" viewBox="0 0 662 108" role="img" aria-label="LQH-2011"
      xmlns="http://www.w3.org/2000/svg">
@@ -164,6 +162,7 @@
   </g>
 </svg>
   <form class="search" action="https://cn.bing.com/search" method="get" role="search">
+    <span class="cmd-indicator" id="cmdIndicator" hidden>❯</span>
     <label class="sr-only" for="q">Buscar</label>
     <input id="q" type="search" name="q" placeholder="Buscar en Bing…"
            autocomplete="off" autofocus spellcheck="false">
@@ -181,25 +180,67 @@
 (function () {
   'use strict';
   var root = document.documentElement;
-  var btn = document.getElementById('themeToggle');
-  var KEY = 'theme';
-  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+  var form = document.querySelector('.search');
+  var input = document.getElementById('q');
+  var indicator = document.getElementById('cmdIndicator');
 
-  function apply(t) { root.dataset.theme = t; try { localStorage.setItem(KEY, t); } catch (e) {} }
-  function current() { return root.dataset.theme || 'light'; }
-  function toggle() { apply(current() === 'dark' ? 'light' : 'dark'); }
+  var ENGINES = {
+    bing:      { action: 'https://cn.bing.com/search',           q: 'q',      ph: 'Buscar en Bing…' },
+    google:    { action: 'https://www.google.com/search',        q: 'q',      ph: 'Buscar en Google…' },
+    deepseek:  { action: 'https://chat.deepseek.com/',           q: 'q',      ph: 'Buscar en DeepSeek…' },
+    wikipedia: { action: 'https://en.wikipedia.org/w/index.php', q: 'search', ph: 'Buscar en Wikipedia…' }
+  };
 
-  var stored = null;
-  try { stored = localStorage.getItem(KEY); } catch (e) {}
-  if (stored) { apply(stored); }
-  else if (mq.matches) { apply('dark'); }
+  var engine = 'bing';
+  var cmd = false;
 
-  if (btn) { btn.addEventListener('click', toggle); }
-  if (mq.addEventListener) {
-    mq.addEventListener('change', function (e) {
-      try { if (!localStorage.getItem(KEY)) apply(e.matches ? 'dark' : 'light'); } catch (err) {}
-    });
+  /* ---------- theme ---------- */
+  /* No button, no persistence, no OS detection: the page always loads in light mode.
+     `k` inside command mode toggles dark mode for the current session. */
+  function toggleTheme() {
+    root.dataset.theme = (root.dataset.theme === 'dark') ? 'light' : 'dark';
   }
+
+  /* ---------- engines / command mode ---------- */
+  function setEngine(name) {
+    engine = name;
+    var e = ENGINES[name];
+    form.action = e.action;
+    input.name = e.q;
+    input.placeholder = e.ph;
+  }
+  function enterCmd() {
+    cmd = true;
+    form.classList.add('cmd');
+    indicator.hidden = false;
+    input.value = '';
+    input.placeholder = 'Comando…';
+  }
+  function exitCmd() {
+    cmd = false;
+    form.classList.remove('cmd');
+    indicator.hidden = true;
+    input.placeholder = ENGINES[engine].ph;
+  }
+
+  /* ---------- command mode: type "aaa" to enter ---------- */
+  input.addEventListener('input', function () {
+    var v = input.value;
+    if (!cmd) {
+      if (v === 'aaa') enterCmd();
+      return;
+    }
+    if (v === 'b')      { setEngine('bing');     exitCmd(); input.value = ''; }
+    else if (v === 'g') { setEngine('google');    exitCmd(); input.value = ''; }
+    else if (v === 'd') { setEngine('deepseek');  exitCmd(); input.value = ''; }
+    else if (v === 'w') { setEngine('wikipedia'); exitCmd(); input.value = ''; }
+    else if (v === 'k') { toggleTheme(); input.value = ''; }
+    else { exitCmd(); }
+  });
+
+  form.addEventListener('submit', function (e) {
+    if (cmd) { e.preventDefault(); exitCmd(); input.value = ''; }
+  });
 })();
 </script>
 </body>

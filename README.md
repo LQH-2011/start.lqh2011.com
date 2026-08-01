@@ -12,9 +12,20 @@ Personal browser start page — minimalist, in the same style as the blog.
 
 ## Features
 
-- **Dark mode**: the `◐` button in the top-right toggles light/dark. Choice is saved in
-  `localStorage`; with no saved choice, the page follows the OS `prefers-color-scheme`.
-  The block logo and its shadow adapt via CSS variables.
+- **Dark mode**: type `aaa` then `k` in the search bar to toggle dark mode for the
+  current session. There is no visual switcher, no persistence and no OS
+  `prefers-color-scheme` detection — the page always loads in light mode, exactly like
+  the original. The block logo and its shadow adapt via CSS variables.
+- **Command mode**: type `aaa` in the search bar to enter command mode (a `❯` indicator
+  appears on the left; input switches to a left-aligned prompt). Then:
+  - `b` — back to Bing (default)
+  - `g` — Google
+  - `d` — DeepSeek chat (`https://chat.deepseek.com/?q=…`)
+  - `w` — Wikipedia
+  - `k` — toggle light/dark mode (stays in command mode)
+  Any other character exits command mode and keeps the text as a normal query; Enter in
+  command mode cancels it. The engine choice persists until you switch again (no reload
+  needed).
 
 ## Editing the logo
 
