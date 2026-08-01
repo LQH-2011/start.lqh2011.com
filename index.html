@@ -58,6 +58,20 @@
     max-width: 440px;
     margin: 44px 0 36px;
   }
+  .cmd-indicator {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .search.cmd input {
+    text-align: left;
+    padding-left: 34px;
+  }
   .search input {
     -webkit-appearance: none;
     appearance: none;
@@ -164,6 +178,7 @@
   </g>
 </svg>
   <form class="search" action="https://cn.bing.com/search" method="get" role="search">
+    <span class="cmd-indicator" id="cmdIndicator" hidden>❯</span>
     <label class="sr-only" for="q">Buscar</label>
     <input id="q" type="search" name="q" placeholder="Buscar en Bing…"
            autocomplete="off" autofocus spellcheck="false">
@@ -182,24 +197,79 @@
   'use strict';
   var root = document.documentElement;
   var btn = document.getElementById('themeToggle');
+  var form = document.querySelector('.search');
+  var input = document.getElementById('q');
+  var indicator = document.getElementById('cmdIndicator');
   var KEY = 'theme';
   var mq = window.matchMedia('(prefers-color-scheme: dark)');
 
+  var ENGINES = {
+    bing:      { action: 'https://cn.bing.com/search',           q: 'q',      ph: 'Buscar en Bing…' },
+    google:    { action: 'https://www.google.com/search',        q: 'q',      ph: 'Buscar en Google…' },
+    deepseek:  { action: 'https://chat.deepseek.com/',           q: 'q',      ph: 'Buscar en DeepSeek…' },
+    wikipedia: { action: 'https://en.wikipedia.org/w/index.php', q: 'search', ph: 'Buscar en Wikipedia…' }
+  };
+
+  var engine = 'bing';
+  var cmd = false;
+
+  /* ---------- theme ---------- */
   function apply(t) { root.dataset.theme = t; try { localStorage.setItem(KEY, t); } catch (e) {} }
   function current() { return root.dataset.theme || 'light'; }
-  function toggle() { apply(current() === 'dark' ? 'light' : 'dark'); }
+  function toggleTheme() { apply(current() === 'dark' ? 'light' : 'dark'); }
 
+  /* ---------- engines / command mode ---------- */
+  function setEngine(name) {
+    engine = name;
+    var e = ENGINES[name];
+    form.action = e.action;
+    input.name = e.q;
+    input.placeholder = e.ph;
+  }
+  function enterCmd() {
+    cmd = true;
+    form.classList.add('cmd');
+    indicator.hidden = false;
+    input.value = '';
+    input.placeholder = 'Comando…';
+  }
+  function exitCmd() {
+    cmd = false;
+    form.classList.remove('cmd');
+    indicator.hidden = true;
+    input.placeholder = ENGINES[engine].ph;
+  }
+
+  /* ---------- init ---------- */
   var stored = null;
   try { stored = localStorage.getItem(KEY); } catch (e) {}
   if (stored) { apply(stored); }
   else if (mq.matches) { apply('dark'); }
-
-  if (btn) { btn.addEventListener('click', toggle); }
+  if (btn) { btn.addEventListener('click', toggleTheme); }
   if (mq.addEventListener) {
     mq.addEventListener('change', function (e) {
       try { if (!localStorage.getItem(KEY)) apply(e.matches ? 'dark' : 'light'); } catch (err) {}
     });
   }
+
+  /* ---------- command mode: type "aaa" to enter ---------- */
+  input.addEventListener('input', function () {
+    var v = input.value;
+    if (!cmd) {
+      if (v === 'aaa') enterCmd();
+      return;
+    }
+    if (v === 'b')      { setEngine('bing');     exitCmd(); input.value = ''; }
+    else if (v === 'g') { setEngine('google');    exitCmd(); input.value = ''; }
+    else if (v === 'd') { setEngine('deepseek');  exitCmd(); input.value = ''; }
+    else if (v === 'w') { setEngine('wikipedia'); exitCmd(); input.value = ''; }
+    else if (v === 'k') { toggleTheme(); input.value = ''; }
+    else { exitCmd(); }
+  });
+
+  form.addEventListener('submit', function (e) {
+    if (cmd) { e.preventDefault(); exitCmd(); input.value = ''; }
+  });
 })();
 </script>
 </body>
