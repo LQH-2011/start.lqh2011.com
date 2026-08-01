@@ -194,11 +194,16 @@
   var engine = 'bing';
   var cmd = false;
 
+  /* ---------- persistence ---------- */
+  function save(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+
   /* ---------- theme ---------- */
-  /* No button, no persistence, no OS detection: the page always loads in light mode.
-     `k` inside command mode toggles dark mode for the current session. */
+  /* No button and no OS detection: default is light, `k` toggles it.
+     The choice is persisted so a page refresh keeps it. */
   function toggleTheme() {
-    root.dataset.theme = (root.dataset.theme === 'dark') ? 'light' : 'dark';
+    var next = (root.dataset.theme === 'dark') ? 'light' : 'dark';
+    root.dataset.theme = next;
+    save('start.theme', next);
   }
 
   /* ---------- engines / command mode ---------- */
@@ -208,6 +213,7 @@
     form.action = e.action;
     input.name = e.q;
     input.placeholder = e.ph;
+    save('start.engine', name);
   }
   function enterCmd() {
     cmd = true;
@@ -222,6 +228,14 @@
     indicator.hidden = true;
     input.placeholder = ENGINES[engine].ph;
   }
+
+  /* ---------- restore saved state ---------- */
+  try {
+    var savedTheme = localStorage.getItem('start.theme');
+    if (savedTheme === 'dark' || savedTheme === 'light') { root.dataset.theme = savedTheme; }
+    var savedEngine = localStorage.getItem('start.engine');
+    if (savedEngine && ENGINES[savedEngine]) { setEngine(savedEngine); }
+  } catch (e) {}
 
   /* ---------- command mode: type "aaa" to enter ---------- */
   input.addEventListener('input', function () {
