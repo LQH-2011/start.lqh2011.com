@@ -109,20 +109,6 @@
     text-decoration: underline;
     text-underline-offset: 4px;
   }
-  .theme-toggle {
-    position: fixed;
-    top: 18px;
-    right: 22px;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    color: var(--muted);
-    font-size: 20px;
-    line-height: 1;
-    padding: 6px;
-    transition: color .15s ease;
-  }
-  .theme-toggle:hover { color: var(--ink); }
   .sr-only {
     position: absolute;
     width: 1px; height: 1px;
@@ -138,8 +124,6 @@
 </style>
 </head>
 <body>
-<button id="themeToggle" class="theme-toggle" type="button"
-        title="Alternar tema claro/oscuro" aria-label="Alternar tema claro/oscuro">◐</button>
 <main>
   <svg class="logo" viewBox="0 0 662 108" role="img" aria-label="LQH-2011"
      xmlns="http://www.w3.org/2000/svg">
@@ -196,12 +180,9 @@
 (function () {
   'use strict';
   var root = document.documentElement;
-  var btn = document.getElementById('themeToggle');
   var form = document.querySelector('.search');
   var input = document.getElementById('q');
   var indicator = document.getElementById('cmdIndicator');
-  var KEY = 'theme';
-  var mq = window.matchMedia('(prefers-color-scheme: dark)');
 
   var ENGINES = {
     bing:      { action: 'https://cn.bing.com/search',           q: 'q',      ph: 'Buscar en Bing…' },
@@ -214,9 +195,11 @@
   var cmd = false;
 
   /* ---------- theme ---------- */
-  function apply(t) { root.dataset.theme = t; try { localStorage.setItem(KEY, t); } catch (e) {} }
-  function current() { return root.dataset.theme || 'light'; }
-  function toggleTheme() { apply(current() === 'dark' ? 'light' : 'dark'); }
+  /* No button, no persistence, no OS detection: the page always loads in light mode.
+     `k` inside command mode toggles dark mode for the current session. */
+  function toggleTheme() {
+    root.dataset.theme = (root.dataset.theme === 'dark') ? 'light' : 'dark';
+  }
 
   /* ---------- engines / command mode ---------- */
   function setEngine(name) {
@@ -238,18 +221,6 @@
     form.classList.remove('cmd');
     indicator.hidden = true;
     input.placeholder = ENGINES[engine].ph;
-  }
-
-  /* ---------- init ---------- */
-  var stored = null;
-  try { stored = localStorage.getItem(KEY); } catch (e) {}
-  if (stored) { apply(stored); }
-  else if (mq.matches) { apply('dark'); }
-  if (btn) { btn.addEventListener('click', toggleTheme); }
-  if (mq.addEventListener) {
-    mq.addEventListener('change', function (e) {
-      try { if (!localStorage.getItem(KEY)) apply(e.matches ? 'dark' : 'light'); } catch (err) {}
-    });
   }
 
   /* ---------- command mode: type "aaa" to enter ---------- */
