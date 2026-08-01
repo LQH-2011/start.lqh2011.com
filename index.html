@@ -12,6 +12,19 @@
     --muted: #666666;
     --faint: #999999;
     --line: #e0e0e0;
+    --logo: #111111;
+    --logo-shadow: #b3b3b3;
+    color-scheme: light;
+  }
+  html[data-theme="dark"] {
+    --bg: #111111;
+    --ink: #e8e8e8;
+    --muted: #9a9a9a;
+    --faint: #6b6b6b;
+    --line: #333333;
+    --logo: #e8e8e8;
+    --logo-shadow: #2a2a2a;
+    color-scheme: dark;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
@@ -24,6 +37,7 @@
     align-items: center;
     justify-content: center;
     padding: 24px;
+    transition: background-color .2s ease, color .2s ease;
   }
   main {
     width: 100%;
@@ -39,6 +53,7 @@
     height: auto;
   }
   .search {
+    position: relative;
     width: 100%;
     max-width: 440px;
     margin: 44px 0 36px;
@@ -80,6 +95,20 @@
     text-decoration: underline;
     text-underline-offset: 4px;
   }
+  .theme-toggle {
+    position: fixed;
+    top: 18px;
+    right: 22px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 20px;
+    line-height: 1;
+    padding: 6px;
+    transition: color .15s ease;
+  }
+  .theme-toggle:hover { color: var(--ink); }
   .sr-only {
     position: absolute;
     width: 1px; height: 1px;
@@ -89,16 +118,21 @@
     white-space: nowrap;
     border: 0;
   }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
 </style>
 </head>
 <body>
+<button id="themeToggle" class="theme-toggle" type="button"
+        title="Alternar tema claro/oscuro" aria-label="Alternar tema claro/oscuro">◐</button>
 <main>
   <svg class="logo" viewBox="0 0 662 108" role="img" aria-label="LQH-2011"
      xmlns="http://www.w3.org/2000/svg">
   <defs>
     <pattern id="shadow" width="12" height="12" patternUnits="userSpaceOnUse">
-      <rect x="0" y="0" width="6" height="6" fill="#b3b3b3"/>
-      <rect x="6" y="6" width="6" height="6" fill="#b3b3b3"/>
+      <rect x="0" y="0" width="6" height="6" fill="var(--logo-shadow)"/>
+      <rect x="6" y="6" width="6" height="6" fill="var(--logo-shadow)"/>
     </pattern>
     <g id="g-L"><rect x="0" y="0" width="12" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="0" y="72" width="60" height="12"/></g>
     <g id="g-Q"><rect x="12" y="0" width="36" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="48" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="12" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="24" y="72" width="24" height="12"/></g>
@@ -118,7 +152,7 @@
       <use href="#g-1" transform="translate(504, 10)"/>
       <use href="#g-1" transform="translate(588, 10)"/>
   </g>
-  <g fill="#111111">
+  <g fill="var(--logo)">
       <use href="#g-L" transform="translate(0, 10)"/>
       <use href="#g-Q" transform="translate(84, 10)"/>
       <use href="#g-H" transform="translate(168, 10)"/>
@@ -143,5 +177,30 @@
     <a href="https://outlook.live.com" target="_blank" rel="noopener noreferrer">outlook.live.com</a>
   </nav>
 </main>
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+  var btn = document.getElementById('themeToggle');
+  var KEY = 'theme';
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+
+  function apply(t) { root.dataset.theme = t; try { localStorage.setItem(KEY, t); } catch (e) {} }
+  function current() { return root.dataset.theme || 'light'; }
+  function toggle() { apply(current() === 'dark' ? 'light' : 'dark'); }
+
+  var stored = null;
+  try { stored = localStorage.getItem(KEY); } catch (e) {}
+  if (stored) { apply(stored); }
+  else if (mq.matches) { apply('dark'); }
+
+  if (btn) { btn.addEventListener('click', toggle); }
+  if (mq.addEventListener) {
+    mq.addEventListener('change', function (e) {
+      try { if (!localStorage.getItem(KEY)) apply(e.matches ? 'dark' : 'light'); } catch (err) {}
+    });
+  }
+})();
+</script>
 </body>
 </html>

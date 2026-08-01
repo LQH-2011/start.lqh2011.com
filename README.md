@@ -10,6 +10,12 @@ Personal browser start page — minimalist, in the same style as the blog.
   - **Search**: submits to `https://cn.bing.com/search?q=…` (change in the `<form action>`).
   - **Bookmarks**: edit the `<nav class="links">` list.
 
+## Features
+
+- **Dark mode**: the `◐` button in the top-right toggles light/dark. Choice is saved in
+  `localStorage`; with no saved choice, the page follows the OS `prefers-color-scheme`.
+  The block logo and its shadow adapt via CSS variables.
+
 ## Editing the logo
 
 Glyph maps live in the 5×7 grid definitions inside the `<svg>` `<defs>`; each glyph is a
