@@ -275,6 +275,9 @@
 
   form.addEventListener('submit', function (e) {
     if (cmd) { e.preventDefault(); exitCmd(); input.value = ''; }
+    /* results open in a new tab, so clear the input for the next query;
+       defer so the submitted query is not affected */
+    else { setTimeout(function () { input.value = ''; }, 0); }
   });
 })();
 </script>
