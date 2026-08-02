@@ -8,7 +8,8 @@ Personal browser start page — minimalist, in the same style as the blog.
   - **Logo**: "LQH-2011" as 5×7 pixel-block glyphs (SVG `<use>` + `<rect>`), with a
     checkerboard-patterned block shadow offset down-right.
   - **Search**: left-aligned input with a magnifier icon, submits to
-    `https://cn.bing.com/search?q=…` (change in the `<form action>`).
+    `https://cn.bing.com/search?q=…` (change in the `<form action>`) and opens the
+    results in a new tab.
   - **Bookmarks**: edit the `<nav class="links">` list.
 
 ## Features
