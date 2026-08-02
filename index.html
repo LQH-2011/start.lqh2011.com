@@ -251,15 +251,16 @@
   /* ---------- command mode: type "aaa" to enter ---------- */
   input.addEventListener('input', function () {
     var v = input.value;
+    var c = v.toLowerCase();   /* commands are case-insensitive: G/g, K/k, … */
     if (!cmd) {
-      if (v === 'aaa') enterCmd();
+      if (c === 'aaa') enterCmd();
       return;
     }
-    if (v === 'b')      { setEngine('bing');     exitCmd(); input.value = ''; }
-    else if (v === 'g') { setEngine('google');    exitCmd(); input.value = ''; }
-    else if (v === 'd') { setEngine('deepseek');  exitCmd(); input.value = ''; }
-    else if (v === 'w') { setEngine('wikipedia'); exitCmd(); input.value = ''; }
-    else if (v === 'k') { toggleTheme(); input.value = ''; }
+    if (c === 'b')      { setEngine('bing');     exitCmd(); input.value = ''; }
+    else if (c === 'g') { setEngine('google');    exitCmd(); input.value = ''; }
+    else if (c === 'd') { setEngine('deepseek');  exitCmd(); input.value = ''; }
+    else if (c === 'w') { setEngine('wikipedia'); exitCmd(); input.value = ''; }
+    else if (c === 'k') { toggleTheme(); input.value = ''; }
     else { exitCmd(); }
   });
 

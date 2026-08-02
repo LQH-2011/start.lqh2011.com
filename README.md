@@ -17,8 +17,9 @@ Personal browser start page — minimalist, in the same style as the blog.
   visual switcher and no OS `prefers-color-scheme` detection; the choice is saved in
   `localStorage` (`start.theme`) and restored on the next load. The block logo and its
   shadow adapt via CSS variables.
-- **Command mode**: type `aaa` in the search bar to enter command mode (the magnifier
-  icon is replaced by a `❯` indicator on the left; the input stays left-aligned). Then:
+- **Command mode**: type `aaa` (or `Aaa`, case-insensitive) in the search bar to enter
+  command mode (the magnifier icon is replaced by a `❯` indicator on the left; the
+  input stays left-aligned). Then (letters are case-insensitive):
   - `b` — back to Bing (default)
   - `g` — Google
   - `d` — DeepSeek chat (`https://chat.deepseek.com/?q=…`)
