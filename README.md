@@ -25,9 +25,9 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `d` — DeepSeek chat (`https://chat.deepseek.com/?q=…`)
   - `w` — Wikipedia
   - `k` — toggle light/dark mode (stays in command mode)
-  Any other character exits command mode and keeps the text as a normal query; Enter in
-  command mode cancels it. The engine choice is saved in `localStorage`
-  (`start.engine`) and restored on the next load.
+  Any other character exits command mode and keeps the text as a normal query; Enter or
+  Backspace (on an empty prompt) in command mode cancels it. The engine choice is saved
+  in `localStorage` (`start.engine`) and restored on the next load.
 
 ## Editing the logo
 
