@@ -264,6 +264,14 @@
     else { exitCmd(); }
   });
 
+  /* Backspace on an empty prompt leaves command mode back to the normal search bar */
+  input.addEventListener('keydown', function (e) {
+    if (cmd && input.value === '' && e.key === 'Backspace') {
+      e.preventDefault();
+      exitCmd();
+    }
+  });
+
   form.addEventListener('submit', function (e) {
     if (cmd) { e.preventDefault(); exitCmd(); input.value = ''; }
   });
