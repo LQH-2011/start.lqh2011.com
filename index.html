@@ -254,7 +254,7 @@
     var v = input.value;
     var c = v.toLowerCase();   /* commands are case-insensitive: G/g, K/k, … */
     if (!cmd) {
-      if (c === 'aaa') enterCmd();
+      if (c === 'aaa' || c === '/') enterCmd();
       return;
     }
     if (c === 'b')      { setEngine('bing');     exitCmd(); input.value = ''; }
