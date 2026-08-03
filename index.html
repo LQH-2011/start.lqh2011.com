@@ -252,7 +252,7 @@
   /* ---------- logo / block-art clock ---------- */
   /* `c` toggles the LQH-2011 logo for a live HH:MM:SS clock in the same
      5x7 block-art style. Both are 8 glyphs at 84px pitch, so the same
-     viewBox fits. Session-only: a reload restores the logo. */
+     viewBox fits. Choice persists in localStorage (start.clock). */
   var logo = document.getElementById('logo');
   var logoShadow = document.getElementById('logoShadow');
   var logoMain = document.getElementById('logoMain');
@@ -298,6 +298,7 @@
       clockTimer = null;
       showLogo();
     }
+    save('start.clock', clockOn ? 'on' : 'off');
   }
 
   /* ---------- restore saved state ---------- */
@@ -306,6 +307,12 @@
     if (savedTheme === 'dark' || savedTheme === 'light') { root.dataset.theme = savedTheme; }
     var savedEngine = localStorage.getItem('start.engine');
     if (savedEngine && ENGINES[savedEngine]) { setEngine(savedEngine); }
+    var savedClock = localStorage.getItem('start.clock');
+    if (savedClock === 'on') {
+      clockOn = true;
+      showClock();
+      clockTimer = setInterval(showClock, 1000);
+    }
   } catch (e) {}
 
   /* ---------- command mode: type "aaa" to enter ---------- */
