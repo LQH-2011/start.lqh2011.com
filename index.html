@@ -126,7 +126,7 @@
 </head>
 <body>
 <main>
-  <svg class="logo" viewBox="0 0 662 108" role="img" aria-label="LQH-2011"
+  <svg class="logo" id="logo" viewBox="0 0 662 108" role="img" aria-label="LQH-2011"
      xmlns="http://www.w3.org/2000/svg">
   <defs>
     <pattern id="shadow" width="12" height="12" patternUnits="userSpaceOnUse">
@@ -140,8 +140,16 @@
     <g id="g-2"><rect x="12" y="0" width="36" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="48" y="12" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="36" y="36" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="12" y="60" width="12" height="12"/><rect x="0" y="72" width="60" height="12"/></g>
     <g id="g-0"><rect x="12" y="0" width="36" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="48" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="12" y="72" width="36" height="12"/></g>
     <g id="g-1"><rect x="24" y="0" width="12" height="12"/><rect x="12" y="12" width="24" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="24" y="36" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="24" y="60" width="12" height="12"/><rect x="12" y="72" width="36" height="12"/></g>
+    <g id="g-3"><rect x="12" y="0" width="36" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="48" y="12" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="24" y="36" width="24" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="12" y="72" width="36" height="12"/></g>
+    <g id="g-4"><rect x="0" y="0" width="12" height="12"/><rect x="48" y="0" width="12" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="48" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="0" y="36" width="60" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="48" y="72" width="12" height="12"/></g>
+    <g id="g-5"><rect x="0" y="0" width="60" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="0" y="36" width="48" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="12" y="72" width="36" height="12"/></g>
+    <g id="g-6"><rect x="12" y="0" width="36" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="0" y="36" width="48" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="12" y="72" width="36" height="12"/></g>
+    <g id="g-7"><rect x="0" y="0" width="60" height="12"/><rect x="48" y="12" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="24" y="36" width="12" height="12"/><rect x="12" y="48" width="12" height="12"/><rect x="12" y="60" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/></g>
+    <g id="g-8"><rect x="12" y="0" width="36" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="48" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="12" y="36" width="36" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="12" y="72" width="36" height="12"/></g>
+    <g id="g-9"><rect x="12" y="0" width="36" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="48" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="12" y="36" width="48" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="12" y="72" width="36" height="12"/></g>
+    <g id="g-colon"><rect x="24" y="24" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/></g>
   </defs>
-  <g fill="url(#shadow)" transform="translate(10, 10)">
+  <g id="logoShadow" fill="url(#shadow)" transform="translate(10, 10)">
       <use href="#g-L" transform="translate(0, 10)"/>
       <use href="#g-Q" transform="translate(84, 10)"/>
       <use href="#g-H" transform="translate(168, 10)"/>
@@ -151,7 +159,7 @@
       <use href="#g-1" transform="translate(504, 10)"/>
       <use href="#g-1" transform="translate(588, 10)"/>
   </g>
-  <g fill="var(--logo)">
+  <g id="logoMain" fill="var(--logo)">
       <use href="#g-L" transform="translate(0, 10)"/>
       <use href="#g-Q" transform="translate(84, 10)"/>
       <use href="#g-H" transform="translate(168, 10)"/>
@@ -241,6 +249,57 @@
     input.placeholder = ENGINES[engine].ph;
   }
 
+  /* ---------- logo / block-art clock ---------- */
+  /* `c` toggles the LQH-2011 logo for a live HH:MM:SS clock in the same
+     5x7 block-art style. Both are 8 glyphs at 84px pitch, so the same
+     viewBox fits. Session-only: a reload restores the logo. */
+  var logo = document.getElementById('logo');
+  var logoShadow = document.getElementById('logoShadow');
+  var logoMain = document.getElementById('logoMain');
+  var GLYPH_IDS = { '0': '0', '1': '1', '2': '2', '3': '3', '4': '4', '5': '5',
+                    '6': '6', '7': '7', '8': '8', '9': '9', ':': 'colon',
+                    'L': 'L', 'Q': 'Q', 'H': 'H', '-': '-' };
+  var LOGO_CHARS = ['L', 'Q', 'H', '-', '2', '0', '1', '1'];
+  var clockOn = false;
+  var clockTimer = null;
+
+  function renderUses(chars) {
+    var s = '';
+    for (var i = 0; i < chars.length; i++) {
+      s += '<use href="#g-' + GLYPH_IDS[chars[i]] + '" transform="translate(' +
+           (i * 84) + ', 10)"/>';
+    }
+    return s;
+  }
+  function showLogo() {
+    logoShadow.innerHTML = renderUses(LOGO_CHARS);
+    logoMain.innerHTML = renderUses(LOGO_CHARS);
+    logo.setAttribute('aria-label', 'LQH-2011');
+  }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function clockChars() {
+    var d = new Date();
+    return (pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' +
+            pad2(d.getSeconds())).split('');
+  }
+  function showClock() {
+    var chars = clockChars();
+    logoShadow.innerHTML = renderUses(chars);
+    logoMain.innerHTML = renderUses(chars);
+    logo.setAttribute('aria-label', chars.join(''));
+  }
+  function toggleClock() {
+    clockOn = !clockOn;
+    if (clockOn) {
+      showClock();
+      clockTimer = setInterval(showClock, 1000);
+    } else {
+      clearInterval(clockTimer);
+      clockTimer = null;
+      showLogo();
+    }
+  }
+
   /* ---------- restore saved state ---------- */
   try {
     var savedTheme = localStorage.getItem('start.theme');
@@ -262,6 +321,7 @@
     else if (c === 'd') { setEngine('deepseek');  exitCmd(); input.value = ''; }
     else if (c === 'w') { setEngine('wikipedia'); exitCmd(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
+    else if (c === 'c') { toggleClock(); input.value = ''; }
     else { exitCmd(); }
   });
 
