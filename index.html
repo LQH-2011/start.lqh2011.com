@@ -397,6 +397,7 @@
       else if (c === 'b') { selectTop('search'); }
       else if (c === 'c') { toggleClock(); input.value = ''; }
       else if (c === 'k') { toggleTheme(); input.value = ''; }
+      else if (c === 'r') { location.reload(); }
       else if (c === 's') { enterSettings(); }
       else { exitToTop(); }
       return;
@@ -409,6 +410,7 @@
     else if (c === 'w') { setEngine('wikipedia'); selectTop('search'); }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
+    else if (c === 'r') { location.reload(); }
     else { exitToTop(); }
   });
 
