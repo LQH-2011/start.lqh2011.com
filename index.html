@@ -288,16 +288,19 @@
   function exitToTop() { setMode(topMode); }
 
   /* ---------- url opener ---------- */
-  /* Only http/https (with or without scheme) plus harmless mailto/tel pass
-     through; active-content schemes (javascript:, data:, …) are rejected so
-     window.open can never execute script or render deceptive content. */
+  /* Supported schemes (http/https/mailto/tel) pass through unchanged. Other
+     scheme-like tokens are host:port authorities (localhost:3000,
+     example.com:8080) -> https:// prefixed; everything else with a scheme
+     (javascript:, data:, …) is rejected so window.open never executes script
+     or renders deceptive content. Bare domains get https:// prefixed. */
   function normalizeUrl(raw) {
-    var scheme = raw.match(/^([a-z][a-z0-9+.-]*):/i);
-    if (scheme) {
-      if (/^(https?|mailto|tel)$/i.test(scheme[1])) return raw;
+    var m = raw.match(/^([a-z][a-z0-9+.-]*):(.*)$/i);
+    if (m) {
+      if (/^(https?|mailto|tel)$/i.test(m[1])) return raw;
+      if (/^\d/.test(m[2])) return 'https://' + raw;  /* host:port */
       return null;
     }
-    return 'https://' + raw;   /* bare domain, localhost, … */
+    return 'https://' + raw;
   }
   function openUrl() {
     var raw = input.value.trim();
@@ -398,11 +401,12 @@
       else { exitToTop(); }
       return;
     }
-    /* settings mode */
-    if (c === 'b')      { setEngine('bing');     setMode('search'); input.value = ''; }
-    else if (c === 'g') { setEngine('google');    setMode('search'); input.value = ''; }
-    else if (c === 'd') { setEngine('deepseek');  setMode('search'); input.value = ''; }
-    else if (c === 'w') { setEngine('wikipedia'); setMode('search'); input.value = ''; }
+    /* settings mode: picking an engine selects search as the top mode, so
+       backspace/Enter from command mode return to the search bar */
+    if (c === 'b')      { setEngine('bing');     selectTop('search'); }
+    else if (c === 'g') { setEngine('google');    selectTop('search'); }
+    else if (c === 'd') { setEngine('deepseek');  selectTop('search'); }
+    else if (c === 'w') { setEngine('wikipedia'); selectTop('search'); }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
     else { exitToTop(); }
