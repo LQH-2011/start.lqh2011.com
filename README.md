@@ -6,7 +6,8 @@ Personal browser start page — minimalist, in the same style as the blog.
 
 - `index.html` — single self-contained page (inline CSS, no dependencies):
   - **Logo**: "LQH-2011" as 5×7 pixel-block glyphs (SVG `<use>` + `<rect>`), with a
-    checkerboard-patterned block shadow offset down-right.
+    checkerboard-patterned block shadow offset down-right. Doubles as a live
+    HH:MM:SS block-art clock via the `c` command (see Features).
   - **Search**: left-aligned input with a magnifier icon, submits to
     `https://cn.bing.com/search?q=…` (change in the `<form action>`), opens the results
     in a new tab, and clears the input for the next query.
@@ -26,15 +27,22 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `d` — DeepSeek chat (`https://chat.deepseek.com/?q=…`)
   - `w` — Wikipedia
   - `k` — toggle light/dark mode (stays in command mode)
+  - `c` — toggle the "LQH-2011" logo and a live HH:MM:SS block-art clock (stays
+    in command mode)
   Any other character exits command mode and keeps the text as a normal query; Enter or
   Backspace (on an empty prompt) in command mode cancels it. The engine choice is saved
   in `localStorage` (`start.engine`) and restored on the next load.
+- **Block-art clock**: type `aaa` then `c` in the search bar to swap the logo for a live
+  clock in the same 5×7 pixel-block style (digits and colon are glyphs in the same SVG
+  `<defs>`; the seconds tick every 1000 ms). Press `c` again to switch back. The choice
+  is saved in `localStorage` (`start.clock`, `on`/`off`) and restored on the next load.
 
 ## Editing the logo
 
 Glyph maps live in the 5×7 grid definitions inside the `<svg>` `<defs>`; each glyph is a
 group of `<rect>` blocks. The shadow pattern is the `#shadow` `<pattern>` (checkerboard).
-The page was generated from `/tmp/gen_start.py` (pixel-font maps → SVG) — ask the assistant
+The page was generated from the `gen_block_logo.py` script in the
+`static-html-artifacts` skill (pixel-font maps → SVG) — ask the assistant
 to regenerate if you want bigger cells, different glyphs, or a different shadow pattern.
 
 ## Deploy
