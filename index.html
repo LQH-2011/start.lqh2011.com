@@ -288,15 +288,23 @@
   function exitToTop() { setMode(topMode); }
 
   /* ---------- url opener ---------- */
+  /* Only http/https (with or without scheme) plus harmless mailto/tel pass
+     through; active-content schemes (javascript:, data:, …) are rejected so
+     window.open can never execute script or render deceptive content. */
   function normalizeUrl(raw) {
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return raw;          /* http://, https://, … */
-    if (/^(mailto|tel|data|javascript):/i.test(raw)) return raw;   /* scheme without // */
-    return 'https://' + raw;                                       /* bare domain, localhost, … */
+    var scheme = raw.match(/^([a-z][a-z0-9+.-]*):/i);
+    if (scheme) {
+      if (/^(https?|mailto|tel)$/i.test(scheme[1])) return raw;
+      return null;
+    }
+    return 'https://' + raw;   /* bare domain, localhost, … */
   }
   function openUrl() {
     var raw = input.value.trim();
     if (!raw) return;
-    window.open(normalizeUrl(raw), '_blank', 'noopener');
+    var url = normalizeUrl(raw);
+    if (!url) return;
+    window.open(url, '_blank', 'noopener');
     input.value = '';
   }
 
