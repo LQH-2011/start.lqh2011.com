@@ -40,9 +40,11 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `d` — DeepSeek chat (`https://chat.deepseek.com/?q=…`)
   - `w` — Wikipedia (`https://en.wikipedia.org/w/index.php`, `name="search"`)
   - `c` / `k` — same toggles as in command mode (stay in settings)
-  Engine keys exit settings back to the search bar with the new engine. Backspace on an
-  empty prompt goes one layer up (settings → command); Enter returns straight to the top.
-  The engine choice is saved in `localStorage` (`start.engine`) and restored on load.
+  Engine keys exit settings back to the search bar with the new engine, and make
+  the search bar the selected top mode (so backspace/Enter return to it). Backspace
+  on an empty prompt goes one layer up (settings → command); Enter returns straight
+  to the top. The engine choice is saved in `localStorage` (`start.engine`) and
+  restored on load.
 - **Block-art clock**: type `aaa` then `c` in the search bar to swap the logo for a live
   clock in the same 5×7 pixel-block style (digits and colon are glyphs in the same SVG
   `<defs>`; the seconds tick every 1000 ms). Press `c` again to switch back. The choice
