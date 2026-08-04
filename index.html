@@ -288,19 +288,19 @@
   function exitToTop() { setMode(topMode); }
 
   /* ---------- url opener ---------- */
-  /* Only http/https (with or without scheme) plus harmless mailto/tel pass
-     through; active-content schemes (javascript:, data:, …) are rejected so
-     window.open can never execute script or render deceptive content.
-     host:port forms (localhost:3000, example.com:8080) are bare domains, not
-     schemes, and get https:// prefixed. */
+  /* Supported schemes (http/https/mailto/tel) pass through unchanged. Other
+     scheme-like tokens are host:port authorities (localhost:3000,
+     example.com:8080) -> https:// prefixed; everything else with a scheme
+     (javascript:, data:, …) is rejected so window.open never executes script
+     or renders deceptive content. Bare domains get https:// prefixed. */
   function normalizeUrl(raw) {
-    if (/^[a-z][a-z0-9+.-]*:\d/i.test(raw)) return 'https://' + raw;  /* host:port */
-    var scheme = raw.match(/^([a-z][a-z0-9+.-]*):/i);
-    if (scheme) {
-      if (/^(https?|mailto|tel)$/i.test(scheme[1])) return raw;
+    var m = raw.match(/^([a-z][a-z0-9+.-]*):(.*)$/i);
+    if (m) {
+      if (/^(https?|mailto|tel)$/i.test(m[1])) return raw;
+      if (/^\d/.test(m[2])) return 'https://' + raw;  /* host:port */
       return null;
     }
-    return 'https://' + raw;   /* bare domain, localhost, … */
+    return 'https://' + raw;
   }
   function openUrl() {
     var raw = input.value.trim();
