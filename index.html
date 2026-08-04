@@ -59,7 +59,9 @@
     margin: 44px 0 36px;
   }
   .search-icon,
-  .cmd-indicator {
+  .cmd-indicator,
+  .globe-icon,
+  .gear-icon {
     position: absolute;
     left: 10px;
     top: 50%;
@@ -67,8 +69,12 @@
     color: var(--muted);
     pointer-events: none;
   }
-  .search-icon { display: flex; }
-  .search-icon[hidden] { display: none; }
+  .search-icon,
+  .globe-icon,
+  .gear-icon { display: flex; }
+  .search-icon[hidden],
+  .globe-icon[hidden],
+  .gear-icon[hidden] { display: none; }
   .cmd-indicator {
     font-size: 15px;
     line-height: 1;
@@ -172,7 +178,15 @@
 </svg>
   <form class="search" action="https://cn.bing.com/search" method="get" role="search"
         target="_blank" rel="noopener noreferrer">
-    <span class="search-icon" id="searchIcon" aria-hidden="true">
+    <span class="globe-icon" id="urlIcon" aria-hidden="true">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="2" y1="12" x2="22" y2="12"/>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+      </svg>
+    </span>
+    <span class="search-icon" id="searchIcon" aria-hidden="true" hidden>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="7"/>
@@ -180,10 +194,17 @@
       </svg>
     </span>
     <span class="cmd-indicator" id="cmdIndicator" hidden>❯</span>
-    <label class="sr-only" for="q">Buscar</label>
-    <input id="q" type="search" name="q" placeholder="Buscar en Bing…"
+    <span class="gear-icon" id="settingsIcon" aria-hidden="true" hidden>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3.5"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </span>
+    <label class="sr-only" for="q">Abrir URL o buscar</label>
+    <input id="q" type="search" name="q" placeholder="Abrir URL…"
            autocomplete="off" autofocus spellcheck="false">
-    <button type="submit" class="sr-only">Buscar</button>
+    <button type="submit" class="sr-only">Abrir o buscar</button>
   </form>
   <nav class="links" aria-label="Favoritos">
     <a href="https://app.lobehub.com" target="_blank" rel="noopener noreferrer">app.lobehub.com</a>
@@ -200,8 +221,10 @@
   var root = document.documentElement;
   var form = document.querySelector('.search');
   var input = document.getElementById('q');
-  var indicator = document.getElementById('cmdIndicator');
+  var urlIcon = document.getElementById('urlIcon');
   var searchIcon = document.getElementById('searchIcon');
+  var cmdIndicator = document.getElementById('cmdIndicator');
+  var settingsIcon = document.getElementById('settingsIcon');
 
   var ENGINES = {
     bing:      { action: 'https://cn.bing.com/search',           q: 'q',      ph: 'Buscar en Bing…' },
@@ -211,7 +234,10 @@
   };
 
   var engine = 'bing';
-  var cmd = false;
+  /* mode: 'url' (default), 'search', 'command', 'settings'.
+     topMode: the selected top-level mode ('url' or 'search'), persisted. */
+  var mode = 'url';
+  var topMode = 'url';
 
   /* ---------- persistence ---------- */
   function save(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
@@ -225,29 +251,61 @@
     save('start.theme', next);
   }
 
-  /* ---------- engines / command mode ---------- */
+  /* ---------- engines ---------- */
   function setEngine(name) {
     engine = name;
     var e = ENGINES[name];
     form.action = e.action;
     input.name = e.q;
-    input.placeholder = e.ph;
     save('start.engine', name);
   }
-  function enterCmd() {
-    cmd = true;
-    form.classList.add('cmd');
-    indicator.hidden = false;
-    searchIcon.hidden = true;
-    input.value = '';
-    input.placeholder = 'Comando…';
+
+  /* ---------- modes ---------- */
+  /* url (globe) — type a URL, Enter opens it in a new tab (default)
+     search (magnifier) — engine search, Enter opens results in a new tab
+     command (❯) — a/b/c/k/s
+     settings (gear) — b/g/d/w engines + c/k toggles
+     topMode is the selected url/search mode, persisted as start.mode. */
+  function setMode(next) {
+    mode = next;
+    urlIcon.hidden = next !== 'url';
+    searchIcon.hidden = next !== 'search';
+    cmdIndicator.hidden = next !== 'command';
+    settingsIcon.hidden = next !== 'settings';
+    if (next === 'url') { input.placeholder = 'Abrir URL…'; }
+    else if (next === 'search') { input.placeholder = ENGINES[engine].ph; }
+    else if (next === 'command') { input.placeholder = 'Comando…'; }
+    else if (next === 'settings') { input.placeholder = 'Ajustes…'; }
   }
-  function exitCmd() {
-    cmd = false;
-    form.classList.remove('cmd');
-    indicator.hidden = true;
-    searchIcon.hidden = false;
-    input.placeholder = ENGINES[engine].ph;
+  function enterCmd() { setMode('command'); input.value = ''; }
+  function enterSettings() { setMode('settings'); input.value = ''; }
+  function selectTop(next) {
+    topMode = next;
+    save('start.mode', next);
+    setMode(next);
+    input.value = '';
+  }
+  function exitToTop() { setMode(topMode); }
+
+  /* ---------- url opener ---------- */
+  /* Only http/https (with or without scheme) plus harmless mailto/tel pass
+     through; active-content schemes (javascript:, data:, …) are rejected so
+     window.open can never execute script or render deceptive content. */
+  function normalizeUrl(raw) {
+    var scheme = raw.match(/^([a-z][a-z0-9+.-]*):/i);
+    if (scheme) {
+      if (/^(https?|mailto|tel)$/i.test(scheme[1])) return raw;
+      return null;
+    }
+    return 'https://' + raw;   /* bare domain, localhost, … */
+  }
+  function openUrl() {
+    var raw = input.value.trim();
+    if (!raw) return;
+    var url = normalizeUrl(raw);
+    if (!url) return;
+    window.open(url, '_blank', 'noopener');
+    input.value = '';
   }
 
   /* ---------- logo / block-art clock ---------- */
@@ -314,38 +372,61 @@
       showClock();
       clockTimer = setInterval(showClock, 1000);
     }
+    var savedMode = localStorage.getItem('start.mode');
+    if (savedMode === 'url' || savedMode === 'search') { topMode = savedMode; }
   } catch (e) {}
+  setMode(topMode);
 
-  /* ---------- command mode: type "aaa" to enter ---------- */
+  /* ---------- input: mode triggers & commands ---------- */
+  /* Any mode: typing "aaa" (or "/") enters command mode.
+     Command mode: a=Abrir (url top), b=Buscar (search top), c=clock, k=theme,
+     s=settings. Settings mode: b/g/d/w engines, c/k toggles.
+     Any other character exits to the selected top mode keeping the text. */
   input.addEventListener('input', function () {
     var v = input.value;
-    var c = v.toLowerCase();   /* commands are case-insensitive: G/g, K/k, … */
-    if (!cmd) {
+    var c = v.toLowerCase();   /* commands are case-insensitive */
+    if (mode === 'url' || mode === 'search') {
       if (c === 'aaa' || c === '/') enterCmd();
       return;
     }
-    if (c === 'b')      { setEngine('bing');     exitCmd(); input.value = ''; }
-    else if (c === 'g') { setEngine('google');    exitCmd(); input.value = ''; }
-    else if (c === 'd') { setEngine('deepseek');  exitCmd(); input.value = ''; }
-    else if (c === 'w') { setEngine('wikipedia'); exitCmd(); input.value = ''; }
-    else if (c === 'k') { toggleTheme(); input.value = ''; }
+    if (mode === 'command') {
+      if (c === 'a')      { selectTop('url'); }
+      else if (c === 'b') { selectTop('search'); }
+      else if (c === 'c') { toggleClock(); input.value = ''; }
+      else if (c === 'k') { toggleTheme(); input.value = ''; }
+      else if (c === 's') { enterSettings(); }
+      else { exitToTop(); }
+      return;
+    }
+    /* settings mode */
+    if (c === 'b')      { setEngine('bing');     setMode('search'); input.value = ''; }
+    else if (c === 'g') { setEngine('google');    setMode('search'); input.value = ''; }
+    else if (c === 'd') { setEngine('deepseek');  setMode('search'); input.value = ''; }
+    else if (c === 'w') { setEngine('wikipedia'); setMode('search'); input.value = ''; }
     else if (c === 'c') { toggleClock(); input.value = ''; }
-    else { exitCmd(); }
+    else if (c === 'k') { toggleTheme(); input.value = ''; }
+    else { exitToTop(); }
   });
 
-  /* Backspace on an empty prompt leaves command mode back to the normal search bar */
+  /* Backspace on an empty prompt goes one layer up: settings -> command -> top */
   input.addEventListener('keydown', function (e) {
-    if (cmd && input.value === '' && e.key === 'Backspace') {
-      e.preventDefault();
-      exitCmd();
-    }
+    if (e.key !== 'Backspace' || input.value !== '') return;
+    if (mode === 'settings') { e.preventDefault(); enterCmd(); }
+    else if (mode === 'command') { e.preventDefault(); exitToTop(); }
   });
 
   form.addEventListener('submit', function (e) {
-    if (cmd) { e.preventDefault(); exitCmd(); input.value = ''; }
-    /* results open in a new tab, so clear the input for the next query;
+    if (mode === 'url') { e.preventDefault(); openUrl(); return; }
+    if (mode === 'command' || mode === 'settings') {
+      /* Enter with nothing typed (or any Enter in a sub-mode) returns to the top */
+      e.preventDefault();
+      exitToTop();
+      input.value = '';
+      return;
+    }
+    /* search mode: results open in a new tab, so clear the input for the next query;
        defer so the submitted query is not affected */
-    else { setTimeout(function () { input.value = ''; }, 0); }
+    setTimeout(function () { input.value = ''; }, 0);
   });
 })();
 </script>
