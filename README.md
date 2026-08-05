@@ -9,8 +9,9 @@ Personal browser start page — minimalist, in the same style as the blog.
     checkerboard-patterned block shadow offset down-right. Doubles as a live
     HH:MM:SS block-art clock via the `c` command (see Features).
   - **Bar**: the input doubles as a URL opener (default) and a search bar.
-    Type a URL and press Enter to open it in a new tab (a bare domain gets
-    `https://` prepended); type `aaa` (or `/`) to enter command mode. When the
+    Type a URL and press Enter to open it in a new tab (a bare domain — or a
+    `host:port` like `localhost:3000` / `example.com:8080` — gets `https://`
+    prepended); type `aaa` (or `/`) to enter command mode. When the
     bar is not focused, global shortcuts still work (`a`, `/`, `s`, `c`, `k` —
     see Features).
   - **Bookmarks**: edit the `<nav class="links">` list.
@@ -22,8 +23,10 @@ Personal browser start page — minimalist, in the same style as the blog.
   `localStorage` (`start.theme`) and restored on the next load. The block logo and its
   shadow adapt via CSS variables.
 - **URL opener (default)**: the bar starts in URL mode (globe indicator). Type a URL and
-  press Enter to open it in a new tab — a bare domain (`example.com`) gets `https://`
-  prepended automatically, URLs with a scheme (`https://…`, `mailto:…`) open as-is.
+  press Enter to open it in a new tab — a bare domain (`example.com`) or a host:port
+  (`localhost:3000`, `example.com:8080`) gets `https://` prepended automatically, URLs
+  with an allowed scheme (`https://…`, `mailto:…`, `tel:…`) open as-is, and any other
+  scheme (`javascript:`, `data:`, …) is rejected.
 - **Command mode**: type `aaa` (or `Aaa` / `/`, case-insensitive) in the bar to
   enter command mode (the indicator swaps to a `❯` on the left; the input stays
   left-aligned). Then (letters are case-insensitive):
