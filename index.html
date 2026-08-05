@@ -364,6 +364,12 @@
   }
 
   /* ---------- restore saved state ---------- */
+  /* start.activeMode is a one-shot flag written by the `r` refresh command in
+     command/settings mode, so the reload lands back in that submode instead of
+     the persisted top mode. It is cleared on load. NOTE: restoring a submode
+     must NOT return early here — that would skip registering the input/submit/
+     shortcut listeners below and leave the page dead. */
+  var restoredSubmode = null;
   try {
     var savedTheme = localStorage.getItem('start.theme');
     if (savedTheme === 'dark' || savedTheme === 'light') { root.dataset.theme = savedTheme; }
@@ -378,15 +384,12 @@
     var savedMode = localStorage.getItem('start.mode');
     if (savedMode === 'url' || savedMode === 'search') { topMode = savedMode; }
     var savedActiveMode = localStorage.getItem('start.activeMode');
-    if (savedActiveMode) {
-      localStorage.removeItem('start.activeMode');
-      if (savedActiveMode === 'command' || savedActiveMode === 'settings') {
-        setMode(savedActiveMode);
-        return;
-      }
+    if (savedActiveMode === 'command' || savedActiveMode === 'settings') {
+      restoredSubmode = savedActiveMode;
     }
   } catch (e) {}
-  setMode(topMode);
+  try { localStorage.removeItem('start.activeMode'); } catch (e) {}
+  setMode(restoredSubmode || topMode);
 
   /* ---------- input: mode triggers & commands ---------- */
   /* Any mode: typing "aaa" (or "/") enters command mode.
