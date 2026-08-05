@@ -241,6 +241,10 @@
 
   /* ---------- persistence ---------- */
   function save(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+  /* sessionStorage is per-tab: the one-shot activeMode handshake must not be
+     shared with other same-origin tabs (a second tab could consume or
+     overwrite it before this tab's reload lands). */
+  function saveSession(key, val) { try { sessionStorage.setItem(key, val); } catch (e) {} }
 
   /* ---------- theme ---------- */
   /* No button and no OS detection: default is light, `k` toggles it.
@@ -383,12 +387,12 @@
     }
     var savedMode = localStorage.getItem('start.mode');
     if (savedMode === 'url' || savedMode === 'search') { topMode = savedMode; }
-    var savedActiveMode = localStorage.getItem('start.activeMode');
+    var savedActiveMode = sessionStorage.getItem('start.activeMode');
     if (savedActiveMode === 'command' || savedActiveMode === 'settings') {
       restoredSubmode = savedActiveMode;
     }
   } catch (e) {}
-  try { localStorage.removeItem('start.activeMode'); } catch (e) {}
+  try { sessionStorage.removeItem('start.activeMode'); } catch (e) {}
   setMode(restoredSubmode || topMode);
 
   /* ---------- input: mode triggers & commands ---------- */
@@ -408,7 +412,7 @@
       else if (c === 'b') { selectTop('search'); }
       else if (c === 'c') { toggleClock(); input.value = ''; }
       else if (c === 'k') { toggleTheme(); input.value = ''; }
-      else if (c === 'r') { save('start.activeMode', 'command'); location.reload(); }
+      else if (c === 'r') { saveSession('start.activeMode', 'command'); location.reload(); }
       else if (c === 's') { enterSettings(); }
       else { exitToTop(); }
       return;
@@ -421,7 +425,7 @@
     else if (c === 'w') { setEngine('wikipedia'); selectTop('search'); }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
-    else if (c === 'r') { save('start.activeMode', 'settings'); location.reload(); }
+    else if (c === 'r') { saveSession('start.activeMode', 'settings'); location.reload(); }
     else { exitToTop(); }
   });
 

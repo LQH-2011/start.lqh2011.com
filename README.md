@@ -78,8 +78,10 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
 
 - `start.mode` — `url` or `search`; the selected top mode, restored on load
   (invalid values → url, the default).
-- `start.activeMode` — temporary flag (`command` or `settings`) set when `r` is
-  pressed in command/settings mode, cleared after the reload restores that submode.
+- `start.activeMode` — per-tab one-shot flag (`command` or `settings`), stored in
+  `sessionStorage` (NOT `localStorage`, so other same-origin tabs can't consume or
+  overwrite it); set when `r` is pressed in command/settings mode, cleared after the
+  reload restores that submode.
 - `start.engine` — `bing`, `google`, `deepseek`, `wikipedia`; restored on load.
 - `start.theme` — `light` or `dark`; restored on load.
 - `start.clock` — `on` or `off`; restored on load (clock shown when `on`).
