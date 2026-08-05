@@ -9,8 +9,11 @@ Personal browser start page — minimalist, in the same style as the blog.
     checkerboard-patterned block shadow offset down-right. Doubles as a live
     HH:MM:SS block-art clock via the `c` command (see Features).
   - **Bar**: the input doubles as a URL opener (default) and a search bar.
-    Type a URL and press Enter to open it in a new tab (a bare domain gets
-    `https://` prepended); type `aaa` (or `/`) to enter command mode.
+    Type a URL and press Enter to open it in a new tab (a bare domain — or a
+    `host:port` like `localhost:3000` / `example.com:8080` — gets `https://`
+    prepended); type `aaa` (or `/`) to enter command mode. When the
+    bar is not focused, global shortcuts still work (`a`, `/`, `s`, `c`, `k` —
+    see Features).
   - **Bookmarks**: edit the `<nav class="links">` list.
 
 ## Features
@@ -20,8 +23,10 @@ Personal browser start page — minimalist, in the same style as the blog.
   `localStorage` (`start.theme`) and restored on the next load. The block logo and its
   shadow adapt via CSS variables.
 - **URL opener (default)**: the bar starts in URL mode (globe indicator). Type a URL and
-  press Enter to open it in a new tab — a bare domain (`example.com`) gets `https://`
-  prepended automatically, URLs with a scheme (`https://…`, `mailto:…`) open as-is.
+  press Enter to open it in a new tab — a bare domain (`example.com`) or a host:port
+  (`localhost:3000`, `example.com:8080`) gets `https://` prepended automatically, URLs
+  with an allowed scheme (`https://…`, `mailto:…`, `tel:…`) open as-is, and any other
+  scheme (`javascript:`, `data:`, …) is rejected.
 - **Command mode**: type `aaa` (or `Aaa` / `/`, case-insensitive) in the bar to
   enter command mode (the indicator swaps to a `❯` on the left; the input stays
   left-aligned). Then (letters are case-insensitive):
@@ -30,6 +35,7 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `c` — toggle the "LQH-2011" logo and a live HH:MM:SS block-art clock (stays in
     command mode)
   - `k` — toggle light/dark theme (stays in command mode)
+  - `r` — refresh the page (stays in command mode)
   - `s` — **Settings**: open the settings mode (gear indicator)
   Any other character exits command mode and keeps the text as-is in the selected top
   mode; Enter or Backspace (on an empty prompt) in command mode returns to the top.
@@ -40,11 +46,22 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `d` — DeepSeek chat (`https://chat.deepseek.com/?q=…`)
   - `w` — Wikipedia (`https://en.wikipedia.org/w/index.php`, `name="search"`)
   - `c` / `k` — same toggles as in command mode (stay in settings)
+  - `r` — refresh the page (stays in settings)
   Engine keys exit settings back to the search bar with the new engine, and make
   the search bar the selected top mode (so backspace/Enter return to it). Backspace
   on an empty prompt goes one layer up (settings → command); Enter returns straight
   to the top. The engine choice is saved in `localStorage` (`start.engine`) and
   restored on load.
+- **Global shortcuts (bar not focused)**: after clicking a bookmark link (or anywhere
+  else), the bar loses focus — these page-level keys still work:
+  - `a` — refocus the url/search bar, keeping the current top mode
+  - `/` — enter command mode directly
+  - `s` — open settings mode directly
+  - `c` — toggle the block-art clock (focus stays where it is)
+  - `k` — toggle light/dark theme (focus stays where it is)
+  Modifier combos (`Ctrl+…`, `Cmd+…`, `Alt+…`) are never intercepted. While any
+  editable element is focused (the bar, a textarea, `contenteditable`) these keys
+  type into it normally (in-bar `/` still enters command mode).
 - **Block-art clock**: type `aaa` then `c` in the search bar to swap the logo for a live
   clock in the same 5×7 pixel-block style (digits and colon are glyphs in the same SVG
   `<defs>`; the seconds tick every 1000 ms). Press `c` again to switch back. The choice
@@ -62,6 +79,10 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
 
 - `start.mode` — `url` or `search`; the selected top mode, restored on load
   (invalid values → url, the default).
+- `start.activeMode` — per-tab one-shot flag (`command` or `settings`), stored in
+  `sessionStorage` (NOT `localStorage`, so other same-origin tabs can't consume or
+  overwrite it); set when `r` is pressed in command/settings mode, cleared after the
+  reload restores that submode.
 - `start.engine` — `bing`, `google`, `deepseek`, `wikipedia`; restored on load.
 - `start.theme` — `light` or `dark`; restored on load.
 - `start.clock` — `on` or `off`; restored on load (clock shown when `on`).
