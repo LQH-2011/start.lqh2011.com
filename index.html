@@ -377,6 +377,14 @@
     }
     var savedMode = localStorage.getItem('start.mode');
     if (savedMode === 'url' || savedMode === 'search') { topMode = savedMode; }
+    var savedActiveMode = localStorage.getItem('start.activeMode');
+    if (savedActiveMode) {
+      localStorage.removeItem('start.activeMode');
+      if (savedActiveMode === 'command' || savedActiveMode === 'settings') {
+        setMode(savedActiveMode);
+        return;
+      }
+    }
   } catch (e) {}
   setMode(topMode);
 
@@ -397,7 +405,7 @@
       else if (c === 'b') { selectTop('search'); }
       else if (c === 'c') { toggleClock(); input.value = ''; }
       else if (c === 'k') { toggleTheme(); input.value = ''; }
-      else if (c === 'r') { location.reload(); }
+      else if (c === 'r') { save('start.activeMode', 'command'); location.reload(); }
       else if (c === 's') { enterSettings(); }
       else { exitToTop(); }
       return;
@@ -410,7 +418,7 @@
     else if (c === 'w') { setEngine('wikipedia'); selectTop('search'); }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
-    else if (c === 'r') { location.reload(); }
+    else if (c === 'r') { save('start.activeMode', 'settings'); location.reload(); }
     else { exitToTop(); }
   });
 
