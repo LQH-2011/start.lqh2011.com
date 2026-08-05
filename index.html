@@ -421,6 +421,36 @@
     else if (mode === 'command') { e.preventDefault(); exitToTop(); }
   });
 
+  /* ---------- global shortcuts (bar NOT focused) ---------- */
+  /* After clicking a bookmark link or anywhere else, the bar loses focus and
+     keys do nothing. These page-level shortcuts only fire when the bar is NOT
+     the active element (typed keys still go to the bar normally). Modifier
+     combos (ctrl/meta/alt) are never hijacked. */
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if (document.activeElement === input) return;
+    var k = e.key.toLowerCase();
+    if (k === 'a') {
+      /* activate the url/search bar, keeping the current top mode */
+      e.preventDefault();
+      input.focus();
+    } else if (k === '/') {
+      e.preventDefault();
+      enterCmd();
+      input.focus();
+    } else if (k === 's') {
+      e.preventDefault();
+      enterSettings();
+      input.focus();
+    } else if (k === 'c') {
+      e.preventDefault();
+      toggleClock();
+    } else if (k === 'k') {
+      e.preventDefault();
+      toggleTheme();
+    }
+  });
+
   form.addEventListener('submit', function (e) {
     if (mode === 'url') { e.preventDefault(); openUrl(); return; }
     if (mode === 'command' || mode === 'settings') {
