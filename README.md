@@ -59,8 +59,9 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `s` — open settings mode directly
   - `c` — toggle the block-art clock (focus stays where it is)
   - `k` — toggle light/dark theme (focus stays where it is)
-  Modifier combos (`Ctrl+…`, `Cmd+…`, `Alt+…`) are never intercepted. While the bar
-  is focused these keys type into it normally (in-bar `/` still enters command mode).
+  Modifier combos (`Ctrl+…`, `Cmd+…`, `Alt+…`) are never intercepted. While any
+  editable element is focused (the bar, a textarea, `contenteditable`) these keys
+  type into it normally (in-bar `/` still enters command mode).
 - **Block-art clock**: type `aaa` then `c` in the search bar to swap the logo for a live
   clock in the same 5×7 pixel-block style (digits and colon are glyphs in the same SVG
   `<defs>`; the seconds tick every 1000 ms). Press `c` again to switch back. The choice
