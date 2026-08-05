@@ -10,7 +10,9 @@ Personal browser start page — minimalist, in the same style as the blog.
     HH:MM:SS block-art clock via the `c` command (see Features).
   - **Bar**: the input doubles as a URL opener (default) and a search bar.
     Type a URL and press Enter to open it in a new tab (a bare domain gets
-    `https://` prepended); type `aaa` (or `/`) to enter command mode.
+    `https://` prepended); type `aaa` (or `/`) to enter command mode. When the
+    bar is not focused, global shortcuts still work (`a`, `/`, `s`, `c`, `k` —
+    see Features).
   - **Bookmarks**: edit the `<nav class="links">` list.
 
 ## Features
@@ -45,6 +47,15 @@ Personal browser start page — minimalist, in the same style as the blog.
   on an empty prompt goes one layer up (settings → command); Enter returns straight
   to the top. The engine choice is saved in `localStorage` (`start.engine`) and
   restored on load.
+- **Global shortcuts (bar not focused)**: after clicking a bookmark link (or anywhere
+  else), the bar loses focus — these page-level keys still work:
+  - `a` — refocus the url/search bar, keeping the current top mode
+  - `/` — enter command mode directly
+  - `s` — open settings mode directly
+  - `c` — toggle the block-art clock (focus stays where it is)
+  - `k` — toggle light/dark theme (focus stays where it is)
+  Modifier combos (`Ctrl+…`, `Cmd+…`, `Alt+…`) are never intercepted. While the bar
+  is focused these keys type into it normally (in-bar `/` still enters command mode).
 - **Block-art clock**: type `aaa` then `c` in the search bar to swap the logo for a live
   clock in the same 5×7 pixel-block style (digits and colon are glyphs in the same SVG
   `<defs>`; the seconds tick every 1000 ms). Press `c` again to switch back. The choice
