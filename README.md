@@ -32,6 +32,7 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `c` — toggle the "LQH-2011" logo and a live HH:MM:SS block-art clock (stays in
     command mode)
   - `k` — toggle light/dark theme (stays in command mode)
+  - `r` — refresh the page (stays in command mode)
   - `s` — **Settings**: open the settings mode (gear indicator)
   Any other character exits command mode and keeps the text as-is in the selected top
   mode; Enter or Backspace (on an empty prompt) in command mode returns to the top.
@@ -42,6 +43,7 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `d` — DeepSeek chat (`https://chat.deepseek.com/?q=…`)
   - `w` — Wikipedia (`https://en.wikipedia.org/w/index.php`, `name="search"`)
   - `c` / `k` — same toggles as in command mode (stay in settings)
+  - `r` — refresh the page (stays in settings)
   Engine keys exit settings back to the search bar with the new engine, and make
   the search bar the selected top mode (so backspace/Enter return to it). Backspace
   on an empty prompt goes one layer up (settings → command); Enter returns straight
