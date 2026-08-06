@@ -63,10 +63,12 @@ Personal browser start page — minimalist, in the same style as the blog.
   editable element is focused (the bar, a textarea, `contenteditable`) these keys
   type into it normally (in-bar `/` still enters command mode).
 - **Pinned-link keys (`1`–`6`)**: press a digit to open the matching bookmark in a
-  new tab — `1` is the first link in the bookmarks list, `6` the last. Works both
-  when the bar is focused and when it is not (pressing a digit while focused does
-  not type into the bar). Modifier combos (`Ctrl+1` / `Cmd+1` tab switching, etc.)
-  and held-key repeats are never hijacked.
+  new tab — `1` is the first link in the bookmarks list, `6` the last. They work
+  in two situations only: when the bar is **not** focused, and while the bar is
+  focused in **command** mode (`aaa` or `/`). In url/search/settings mode the
+  digits type into the bar normally (so URLs like `1.1.1.1` still work).
+  Modifier combos (`Ctrl+1` / `Cmd+1` tab switching, etc.) and held-key repeats
+  are never hijacked.
 - **Block-art clock**: type `aaa` then `c` in the search bar to swap the logo for a live
   clock in the same 5×7 pixel-block style (digits and colon are glyphs in the same SVG
   `<defs>`; the seconds tick every 1000 ms). Press `c` again to switch back. The choice

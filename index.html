@@ -316,9 +316,10 @@
   }
 
   /* ---------- pinned links (1-6) ---------- */
-  /* Keys 1-6 open the six bookmark links below, both when the bar is focused
-     and when it is not. Modifier combos (Ctrl/Cmd/Alt+1 — browser tab
-     switching) and held-key repeats are never hijacked. */
+  /* Keys 1-6 open the six bookmark links below when the bar is NOT focused,
+     and while the bar is focused in COMMAND mode only. In url/search/settings
+     the digits type into the bar normally. Modifier combos (Ctrl/Cmd/Alt+1 —
+     browser tab switching) and held-key repeats are never hijacked. */
   var pinned = Array.prototype.slice.call(document.querySelectorAll('.links a'));
 
   function openPinned(n) {
@@ -444,10 +445,11 @@
   });
 
   /* Backspace on an empty prompt goes one layer up: settings -> command -> top.
-     Keys 1-6 open the pinned links even while the bar is focused (no modifiers,
-     no repeat). */
+     Keys 1-6 open the pinned links ONLY while the bar is focused in COMMAND
+     mode (no modifiers, no repeat). In url/search/settings the digits type
+     into the bar normally. */
   input.addEventListener('keydown', function (e) {
-    if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && isDigitKey(e.key)) {
+    if (mode === 'command' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && isDigitKey(e.key)) {
       e.preventDefault();
       openPinned(Number(e.key));
       return;
