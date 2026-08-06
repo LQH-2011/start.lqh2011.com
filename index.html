@@ -315,6 +315,20 @@
     input.value = '';
   }
 
+  /* ---------- pinned links (1-6) ---------- */
+  /* Keys 1-6 open the six bookmark links below, both when the bar is focused
+     and when it is not. Modifier combos (Ctrl/Cmd/Alt+1 — browser tab
+     switching) and held-key repeats are never hijacked. */
+  var pinned = Array.prototype.slice.call(document.querySelectorAll('.links a'));
+
+  function openPinned(n) {
+    if (n < 1 || n > pinned.length) return;
+    window.open(pinned[n - 1].href, '_blank', 'noopener');
+  }
+  function isDigitKey(k) {
+    return k.length === 1 && k >= '1' && k <= '6';
+  }
+
   /* ---------- logo / block-art clock ---------- */
   /* `c` toggles the LQH-2011 logo for a live HH:MM:SS clock in the same
      5x7 block-art style. Both are 8 glyphs at 84px pitch, so the same
@@ -429,8 +443,15 @@
     else { exitToTop(); }
   });
 
-  /* Backspace on an empty prompt goes one layer up: settings -> command -> top */
+  /* Backspace on an empty prompt goes one layer up: settings -> command -> top.
+     Keys 1-6 open the pinned links even while the bar is focused (no modifiers,
+     no repeat). */
   input.addEventListener('keydown', function (e) {
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && isDigitKey(e.key)) {
+      e.preventDefault();
+      openPinned(Number(e.key));
+      return;
+    }
     if (e.key !== 'Backspace' || input.value !== '') return;
     if (mode === 'settings') { e.preventDefault(); enterCmd(); }
     else if (mode === 'command') { e.preventDefault(); exitToTop(); }
@@ -466,6 +487,10 @@
     } else if (k === 'k') {
       e.preventDefault();
       toggleTheme();
+    } else if (isDigitKey(k)) {
+      /* 1-6 open the pinned links */
+      e.preventDefault();
+      openPinned(Number(k));
     }
   });
 
