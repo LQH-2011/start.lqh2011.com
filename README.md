@@ -37,6 +37,13 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `k` — toggle light/dark theme (stays in command mode)
   - `r` — refresh the page (stays in command mode)
   - `s` — **Settings**: open the settings mode (gear indicator)
+  - `t` — **Timer**: set a countdown (timer indicator; type the duration, Enter
+    starts it)
+  - `u` — start a count-up from `00:00` (stays in command mode)
+  - `h` — toggle hours (`MM:SS` ↔ `HH:MM:SS`) for the active timer (stays in
+    command mode)
+  - `x` — stop the timer and restore the logo (or the clock if it was on)
+    (stays in command mode)
   Any other character exits command mode and keeps the text as-is in the selected top
   mode; Enter or Backspace (on an empty prompt) in command mode returns to the top.
 - **Settings mode**: `s` from command mode opens it (gear indicator). Then
@@ -73,6 +80,18 @@ Personal browser start page — minimalist, in the same style as the blog.
   clock in the same 5×7 pixel-block style (digits and colon are glyphs in the same SVG
   `<defs>`; the seconds tick every 1000 ms). Press `c` again to switch back. The choice
   is saved in `localStorage` (`start.clock`, `on`/`off`) and restored on the next load.
+- **Timer**: type `aaa` then `t` to set a **countdown** (the indicator swaps to a timer
+  icon, the placeholder shows the accepted formats). Type the duration and press Enter —
+  three formats are accepted: a plain integer is minutes (`25` = 25 min), `MM:SS`
+  (`05:00`), or `HH:MM:SS` (`1:30:00`). A duration over 60 minutes (`90` or `90:00`)
+  automatically converts to `HH:MM:SS` (`1:30:00`). Type `aaa` then `u` for a **count-up**
+  that starts at `00:00`. The timer replaces the logo at the top in the same block-art
+  style; it shows `MM:SS` by default and `HH:MM:SS` once the duration/elapsed time
+  reaches one hour. `h` (in command mode) toggles the hours display manually; `x` stops
+  the timer and restores the logo (or the block-art clock if it was on). In timer mode,
+  digits and colons type the value, Enter starts the countdown, Backspace on an empty
+  prompt returns to command mode, and any other character exits keeping the text. The
+  timer is session-only — reloading the page clears it.
 
 ## Editing the logo
 

@@ -61,7 +61,8 @@
   .search-icon,
   .cmd-indicator,
   .globe-icon,
-  .gear-icon {
+  .gear-icon,
+  .timer-icon {
     position: absolute;
     left: 10px;
     top: 50%;
@@ -71,10 +72,12 @@
   }
   .search-icon,
   .globe-icon,
-  .gear-icon { display: flex; }
+  .gear-icon,
+  .timer-icon { display: flex; }
   .search-icon[hidden],
   .globe-icon[hidden],
-  .gear-icon[hidden] { display: none; }
+  .gear-icon[hidden],
+  .timer-icon[hidden] { display: none; }
   .cmd-indicator {
     font-size: 15px;
     line-height: 1;
@@ -194,6 +197,14 @@
       </svg>
     </span>
     <span class="cmd-indicator" id="cmdIndicator" hidden>❯</span>
+    <span class="timer-icon" id="timerIcon" aria-hidden="true" hidden>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="10" x2="14" y1="2" y2="2"/>
+        <line x1="12" x2="15" y1="14" y2="11"/>
+        <circle cx="12" cy="14" r="8"/>
+      </svg>
+    </span>
     <span class="gear-icon" id="settingsIcon" aria-hidden="true" hidden>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -225,6 +236,7 @@
   var searchIcon = document.getElementById('searchIcon');
   var cmdIndicator = document.getElementById('cmdIndicator');
   var settingsIcon = document.getElementById('settingsIcon');
+  var timerIcon = document.getElementById('timerIcon');
 
   var ENGINES = {
     bing:      { action: 'https://cn.bing.com/search',           q: 'q',      ph: 'Buscar en Bing…' },
@@ -276,10 +288,12 @@
     searchIcon.hidden = next !== 'search';
     cmdIndicator.hidden = next !== 'command';
     settingsIcon.hidden = next !== 'settings';
+    timerIcon.hidden = next !== 'timer';
     if (next === 'url') { input.placeholder = 'Abrir URL…'; }
     else if (next === 'search') { input.placeholder = ENGINES[engine].ph; }
     else if (next === 'command') { input.placeholder = 'Comando…'; }
     else if (next === 'settings') { input.placeholder = 'Ajustes…'; }
+    else if (next === 'timer') { input.placeholder = 'Temporizador (min | MM:SS | HH:MM:SS)'; }
   }
   function enterCmd() { setMode('command'); input.value = ''; }
   function enterSettings() { setMode('settings'); input.value = ''; }
@@ -345,10 +359,13 @@
   var clockTimer = null;
 
   function renderUses(chars) {
+    /* Center shorter strings (timer MM:SS = 5 glyphs) in the 662-wide viewBox;
+       8-glyph strings (logo, clock, HH:MM:SS) keep the original x=0 start. */
+    var x0 = Math.max(0, Math.round((662 - chars.length * 84) / 2));
     var s = '';
     for (var i = 0; i < chars.length; i++) {
       s += '<use href="#g-' + GLYPH_IDS[chars[i]] + '" transform="translate(' +
-           (i * 84) + ', 10)"/>';
+           (x0 + i * 84) + ', 10)"/>';
     }
     return s;
   }
@@ -370,6 +387,17 @@
     logo.setAttribute('aria-label', chars.join(''));
   }
   function toggleClock() {
+    if (timerState) {
+      /* A running timer: `c` stops it and brings back the clock — the timer
+         is an overlay on the logo/clock slot, so c means "show the clock"
+         (deterministic, not a toggle-trap). */
+      resetTicker();
+      clockOn = true;
+      showClock();
+      if (!clockTimer) { clockTimer = setInterval(showClock, 1000); }
+      save('start.clock', 'on');
+      return;
+    }
     clockOn = !clockOn;
     if (clockOn) {
       showClock();
@@ -380,6 +408,105 @@
       showLogo();
     }
     save('start.clock', clockOn ? 'on' : 'off');
+  }
+
+  /* ---------- timer ---------- */
+  /* Command-mode keys: `t` enters timer mode (type minutes, MM:SS or
+     HH:MM:SS, then Enter starts a countdown); `u` starts a count-up from
+     00:00; `h` toggles the hours display (MM:SS by default); `x` stops the
+     timer and restores the base display (block-art clock if start.clock is
+     on, else the logo). A duration or elapsed time of >= 1h automatically
+     shows HH:MM:SS. The timer is session-only — it is never persisted. */
+  var hoursOn = false;
+  var timerState = null;   /* {kind:'down', end} | {kind:'up', start} */
+  var timerTick = null;
+
+  function enterTimer() { setMode('timer'); input.value = ''; }
+
+  function fmtTimer(secs) {
+    var h = Math.floor(secs / 3600);
+    var m = Math.floor((secs % 3600) / 60);
+    var s = secs % 60;
+    if (hoursOn || secs >= 3600) return pad2(h) + ':' + pad2(m) + ':' + pad2(s);
+    return pad2(m) + ':' + pad2(s);
+  }
+  function renderTimer(secs) {
+    var chars = fmtTimer(secs).split('');
+    logoShadow.innerHTML = renderUses(chars);
+    logoMain.innerHTML = renderUses(chars);
+    logo.setAttribute('aria-label', chars.join(''));
+  }
+  function resetTicker() {
+    if (timerTick) { clearInterval(timerTick); timerTick = null; }
+    timerState = null;
+  }
+  function stopClockTimer() {
+    if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  }
+  function stopTimer(restoreBase) {
+    resetTicker();
+    if (restoreBase) {
+      if (clockOn) { showClock(); clockTimer = setInterval(showClock, 1000); }
+      else { showLogo(); }
+    }
+  }
+  function tickTimer() {
+    if (!timerState) return;
+    if (timerState.kind === 'down') {
+      var left = Math.max(0, Math.round((timerState.end - Date.now()) / 1000));
+      renderTimer(left);
+      if (left <= 0) {
+        /* finished: stop ticking but keep 00:00 on display until stopped */
+        clearInterval(timerTick);
+        timerTick = null;
+      }
+    } else {
+      renderTimer(Math.floor((Date.now() - timerState.start) / 1000));
+    }
+  }
+  function startCountdown(totalSecs) {
+    resetTicker();
+    stopClockTimer();
+    timerState = { kind: 'down', end: Date.now() + totalSecs * 1000 };
+    renderTimer(totalSecs);
+    timerTick = setInterval(tickTimer, 1000);
+  }
+  function startCountup() {
+    resetTicker();
+    stopClockTimer();
+    timerState = { kind: 'up', start: Date.now() };
+    renderTimer(0);
+    timerTick = setInterval(tickTimer, 1000);
+  }
+  /* Countdown value formats: a plain integer is minutes (`25` = 25 min);
+     `MM:SS` (`05:00`); `HH:MM:SS` (`1:30:00`). `90` or `90:00` = 90 minutes,
+     which auto-converts to 1:30:00. Returns seconds, or null if invalid. */
+  function parseDuration(raw) {
+    var parts = raw.split(':');
+    if (parts.length < 1 || parts.length > 3) return null;
+    for (var i = 0; i < parts.length; i++) {
+      if (!/^\d+$/.test(parts[i])) return null;
+    }
+    if (parts.length === 1) return Number(parts[0]) * 60;
+    if (parts.length === 2) return Number(parts[0]) * 60 + Number(parts[1]);
+    return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]);
+  }
+  function commitTimer() {
+    var secs = parseDuration(input.value.trim());
+    if (secs === null || secs === 0) return;   /* stay in timer mode to fix it */
+    startCountdown(secs);
+    exitToTop();
+    input.value = '';
+  }
+  function toggleHours() {
+    hoursOn = !hoursOn;
+    if (timerState) {
+      if (timerState.kind === 'down') {
+        renderTimer(Math.max(0, Math.round((timerState.end - Date.now()) / 1000)));
+      } else {
+        renderTimer(Math.floor((Date.now() - timerState.start) / 1000));
+      }
+    }
   }
 
   /* ---------- restore saved state ---------- */
@@ -429,7 +556,17 @@
       else if (c === 'k') { toggleTheme(); input.value = ''; }
       else if (c === 'r') { saveSession('start.activeMode', 'command'); location.reload(); }
       else if (c === 's') { enterSettings(); }
+      else if (c === 't') { enterTimer(); }
+      else if (c === 'u') { startCountup(); input.value = ''; }
+      else if (c === 'h') { toggleHours(); input.value = ''; }
+      else if (c === 'x') { stopTimer(true); input.value = ''; }
       else { exitToTop(); }
+      return;
+    }
+    if (mode === 'timer') {
+      /* countdown value: digits and colons only; anything else is a typo —
+         leave timer mode keeping the text in the selected top mode */
+      if (!/^[0-9:]*$/.test(v)) exitToTop();
       return;
     }
     /* settings mode: picking an engine selects search as the top mode, so
@@ -457,6 +594,7 @@
     if (e.key !== 'Backspace' || input.value !== '') return;
     if (mode === 'settings') { e.preventDefault(); enterCmd(); }
     else if (mode === 'command') { e.preventDefault(); exitToTop(); }
+    else if (mode === 'timer') { e.preventDefault(); enterCmd(); }
   });
 
   /* ---------- global shortcuts (bar NOT focused) ---------- */
@@ -498,6 +636,7 @@
 
   form.addEventListener('submit', function (e) {
     if (mode === 'url') { e.preventDefault(); openUrl(); return; }
+    if (mode === 'timer') { e.preventDefault(); commitTimer(); return; }
     if (mode === 'command' || mode === 'settings') {
       /* Enter with nothing typed (or any Enter in a sub-mode) returns to the top */
       e.preventDefault();
