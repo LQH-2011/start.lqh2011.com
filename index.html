@@ -432,23 +432,28 @@
     if (!raw) return;
     var t = null;
     try { t = JSON.parse(raw); } catch (e) { try { localStorage.removeItem('start.timer'); } catch (e2) {} return; }
-    if (!t || (t.kind !== 'down' && t.kind !== 'up')) {
+    /* Validate the COMPLETE record before mutating any state (CodeRabbit
+       finding): hours must be boolean and the timestamp must be finite —
+       otherwise `{"kind":"up","hours":true}` would poison hoursOn, and a
+       JSON `1e9999` end would parse to Infinity and render a broken timer. */
+    if (!t ||
+        typeof t.hours !== 'boolean' ||
+        (t.kind !== 'down' && t.kind !== 'up') ||
+        (t.kind === 'down' && !Number.isFinite(t.end)) ||
+        (t.kind === 'up' && !Number.isFinite(t.start))) {
       try { localStorage.removeItem('start.timer'); } catch (e) {}
       return;
     }
-    hoursOn = !!t.hours;
-    if (t.kind === 'down' && typeof t.end === 'number') {
+    hoursOn = t.hours;
+    if (t.kind === 'down') {
       timerState = { kind: 'down', end: t.end };
       var left = Math.max(0, Math.round((t.end - Date.now()) / 1000));
       renderTimer(left);
       if (left > 0) { timerTick = setInterval(tickTimer, 1000); }
-    } else if (t.kind === 'up' && typeof t.start === 'number') {
+    } else {
       timerState = { kind: 'up', start: t.start };
       renderTimer(Math.floor((Date.now() - t.start) / 1000));
       timerTick = setInterval(tickTimer, 1000);
-    } else {
-      try { localStorage.removeItem('start.timer'); } catch (e) {}
-      return;
     }
     stopClockTimer();   /* a restored timer owns the display slot */
   }
