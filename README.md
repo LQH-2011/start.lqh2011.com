@@ -83,8 +83,8 @@ Personal browser start page — minimalist, in the same style as the blog.
 - **Timer**: type `aaa` then `t` to set a **countdown** (the indicator swaps to a timer
   icon, the placeholder shows the accepted formats). Type the duration and press Enter —
   three formats are accepted: a plain integer is minutes (`25` = 25 min), `MM:SS`
-  (`05:00`), or `HH:MM:SS` (`1:30:00`). A duration over 60 minutes (`90` or `90:00`)
-  automatically converts to `HH:MM:SS` (`1:30:00`). Type `aaa` then `u` for a **count-up**
+  (`05:00`), or `HH:MM:SS` (`1:30:00`). A duration of one hour or more (`60`, `90`, or
+  `90:00`) automatically converts to `HH:MM:SS` (`1:00:00` or `1:30:00`). Type `aaa` then `u` for a **count-up**
   that starts at `00:00`. The timer replaces the logo at the top in the same block-art
   style; it shows `MM:SS` by default and `HH:MM:SS` once the duration/elapsed time
   reaches one hour. `h` (in command mode) toggles the hours display manually; `x` stops

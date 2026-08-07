@@ -446,7 +446,12 @@
   function stopTimer(restoreBase) {
     resetTicker();
     if (restoreBase) {
-      if (clockOn) { showClock(); clockTimer = setInterval(showClock, 1000); }
+      if (clockOn) {
+        showClock();
+        /* guard: x with no timer running while the clock is on must NOT spawn a
+           second interval and overwrite the stored id (CodeRabbit finding) */
+        if (!clockTimer) { clockTimer = setInterval(showClock, 1000); }
+      }
       else { showLogo(); }
     }
   }
