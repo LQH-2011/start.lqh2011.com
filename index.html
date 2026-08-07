@@ -71,14 +71,14 @@
     pointer-events: none;
   }
   .search-icon,
-  .globe-icon,
   .gear-icon,
   .timer-icon { display: flex; }
   .search-icon[hidden],
   .globe-icon[hidden],
   .gear-icon[hidden],
   .timer-icon[hidden] { display: none; }
-  .cmd-indicator {
+  .cmd-indicator,
+  .globe-icon {
     font-size: 15px;
     line-height: 1;
   }
@@ -181,15 +181,7 @@
 </svg>
   <form class="search" action="https://cn.bing.com/search" method="get" role="search"
         target="_blank" rel="noopener noreferrer">
-    <span class="globe-icon" id="urlIcon" aria-hidden="true">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="5" cy="7.5" r="1.75" fill="currentColor" stroke="none"/>
-        <circle cx="5" cy="16.5" r="1.75" fill="currentColor" stroke="none"/>
-        <line x1="10" y1="3" x2="18" y2="21"/>
-        <line x1="14" y1="3" x2="22" y2="21"/>
-      </svg>
-    </span>
+    <span class="globe-icon" id="urlIcon" aria-hidden="true">://</span>
     <span class="search-icon" id="searchIcon" aria-hidden="true" hidden>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
