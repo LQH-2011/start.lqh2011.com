@@ -91,7 +91,10 @@ Personal browser start page — minimalist, in the same style as the blog.
   the timer and restores the logo (or the block-art clock if it was on). In timer mode,
   digits and colons type the value, Enter starts the countdown, Backspace on an empty
   prompt returns to command mode, and any other character exits keeping the text. The
-  timer is session-only — reloading the page clears it.
+  timer survives reloads: its state (absolute end/start timestamps plus the hours
+  display) is saved in `localStorage` under `start.timer`, so a countdown resumes with
+  the correct remaining time, a count-up keeps counting, and a finished countdown stays
+  at `00:00`. Stopping it with `x` (or `c`) clears the saved state.
 
 ## Editing the logo
 
