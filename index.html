@@ -380,17 +380,20 @@
     logo.setAttribute('aria-label', chars.join(''));
   }
   function toggleClock() {
-    if (timerState) {
-      /* A running timer: `c` stops it and brings back the clock — the timer
-         is an overlay on the logo/clock slot, so c means "show the clock"
-         (deterministic, not a toggle-trap). */
-      resetTicker();
+    if (timerState && timerVisible) {
+      /* A running timer is on display: `c` hides it and brings back the
+         clock — the timer KEEPS RUNNING in the background (timestamp-based,
+         so it loses nothing) and `t` brings it back. */
+      timerVisible = false;
+      persistTimer();
       clockOn = true;
       showClock();
       if (!clockTimer) { clockTimer = setInterval(showClock, 1000); }
       save('start.clock', 'on');
       return;
     }
+    /* No timer, or a timer running in the background (display already
+       shows the clock/logo): normal clock toggle, timer unaffected. */
     clockOn = !clockOn;
     if (clockOn) {
       showClock();
@@ -405,25 +408,37 @@
 
   /* ---------- timer ---------- */
   /* Command-mode keys: `t` enters timer mode (type minutes, MM:SS or
-     HH:MM:SS, then Enter starts a countdown); `u` starts a count-up from
-     00:00; `h` toggles the hours display (MM:SS by default); `x` stops the
-     timer and restores the base display (block-art clock if start.clock is
-     on, else the logo). A duration or elapsed time of >= 1h automatically
-     shows HH:MM:SS. The timer survives reloads: start.timer holds the
-     absolute end/start timestamps (plus the hours flag), so a countdown
-     resumes with the correct remaining time and a count-up keeps counting. */
+     HH:MM:SS, then Enter starts a countdown) — or, when a timer is already
+     running, brings its display back; `u` starts a count-up from 00:00;
+     `h` toggles the hours display (MM:SS by default); `x` stops the timer
+     and restores the base display (block-art clock if start.clock is on,
+     else the logo). A duration or elapsed time of >= 1h automatically
+     shows HH:MM:SS.
+     BACKGROUND RUNNING: the timer keeps ticking even when its display is
+     hidden — `c` while a running timer is shown hides it and brings back
+     the clock (or `c` again, the logo) WITHOUT stopping it, and `t`
+     (command mode or the global shortcut) re-shows it. The countdown is
+     timestamp-based, so a hidden timer keeps the correct remaining time.
+     The timer survives reloads: start.timer holds the absolute end/start
+     timestamps (plus the hours flag and whether it was visible), so a
+     countdown resumes with the correct remaining time and a count-up
+     keeps counting. */
   var hoursOn = false;
   var timerState = null;   /* {kind:'down', end} | {kind:'up', start} */
   var timerTick = null;
+  var timerVisible = false;   /* does the timer own the logo/clock display slot? */
 
   /* start.timer persistence: absolute timestamps make resume drift-free
-     across reloads. Written on start/toggle, removed on stop. */
+     across reloads. Written on start/toggle/show/hide, removed on stop.
+     `visible` records whether the timer was on display, so a reload lands
+     back on the same view (clock/logo when hidden, timer when shown). */
   function persistTimer() {
     if (!timerState) { localStorage.removeItem('start.timer'); return; }
     var rec = timerState.kind === 'down'
       ? { kind: 'down', end: timerState.end }
       : { kind: 'up', start: timerState.start };
     rec.hours = hoursOn;
+    rec.visible = timerVisible;
     save('start.timer', JSON.stringify(rec));
   }
   function restoreTimer() {
@@ -445,17 +460,22 @@
       return;
     }
     hoursOn = t.hours;
+    /* `visible` is optional: records written before the background-run
+       feature had no field and were always on display, so default to true. */
+    timerVisible = (typeof t.visible === 'boolean') ? t.visible : true;
     if (t.kind === 'down') {
       timerState = { kind: 'down', end: t.end };
       var left = Math.max(0, Math.round((t.end - Date.now()) / 1000));
-      renderTimer(left);
+      if (timerVisible) { renderTimer(left); stopClockTimer(); }
       if (left > 0) { timerTick = setInterval(tickTimer, 1000); }
     } else {
       timerState = { kind: 'up', start: t.start };
-      renderTimer(Math.floor((Date.now() - t.start) / 1000));
+      if (timerVisible) {
+        renderTimer(Math.floor((Date.now() - t.start) / 1000));
+        stopClockTimer();
+      }
       timerTick = setInterval(tickTimer, 1000);
     }
-    stopClockTimer();   /* a restored timer owns the display slot */
   }
 
   function enterTimer() { setMode('timer'); input.value = ''; }
@@ -493,17 +513,38 @@
       else { showLogo(); }
     }
   }
+  function showTimer() {
+    /* Bring the running timer back on display (after `c` hid it, or after a
+       reload that restored it hidden). The clock is stopped so it can't
+       overwrite the slot; the timer keeps its timestamp-derived value. */
+    if (!timerState) return;
+    timerVisible = true;
+    stopClockTimer();
+    var secs;
+    if (timerState.kind === 'down') {
+      secs = Math.max(0, Math.round((timerState.end - Date.now()) / 1000));
+      /* a countdown that finished while hidden has no tick; show 00:00 */
+      if (secs > 0 && !timerTick) { timerTick = setInterval(tickTimer, 1000); }
+    } else {
+      secs = Math.floor((Date.now() - timerState.start) / 1000);
+      if (!timerTick) { timerTick = setInterval(tickTimer, 1000); }
+    }
+    renderTimer(secs);
+    persistTimer();
+  }
   function tickTimer() {
     if (!timerState) return;
     if (timerState.kind === 'down') {
       var left = Math.max(0, Math.round((timerState.end - Date.now()) / 1000));
-      renderTimer(left);
+      /* only render while the timer owns the display slot — when hidden
+         (clock/logo showing) the tick keeps running to catch the finish */
+      if (timerVisible) renderTimer(left);
       if (left <= 0) {
         /* finished: stop ticking but keep 00:00 on display until stopped */
         clearInterval(timerTick);
         timerTick = null;
       }
-    } else {
+    } else if (timerVisible) {
       renderTimer(Math.floor((Date.now() - timerState.start) / 1000));
     }
   }
@@ -511,6 +552,7 @@
     resetTicker();
     stopClockTimer();
     timerState = { kind: 'down', end: Date.now() + totalSecs * 1000 };
+    timerVisible = true;
     renderTimer(totalSecs);
     timerTick = setInterval(tickTimer, 1000);
     persistTimer();
@@ -519,6 +561,7 @@
     resetTicker();
     stopClockTimer();
     timerState = { kind: 'up', start: Date.now() };
+    timerVisible = true;
     renderTimer(0);
     timerTick = setInterval(tickTimer, 1000);
     persistTimer();
@@ -546,10 +589,15 @@
   function toggleHours() {
     hoursOn = !hoursOn;
     if (timerState) {
-      if (timerState.kind === 'down') {
-        renderTimer(Math.max(0, Math.round((timerState.end - Date.now()) / 1000)));
-      } else {
-        renderTimer(Math.floor((Date.now() - timerState.start) / 1000));
+      /* re-render only when the timer owns the display slot; a hidden
+         (background) timer just persists the new format for when it's
+         shown again */
+      if (timerVisible) {
+        if (timerState.kind === 'down') {
+          renderTimer(Math.max(0, Math.round((timerState.end - Date.now()) / 1000)));
+        } else {
+          renderTimer(Math.floor((Date.now() - timerState.start) / 1000));
+        }
       }
       persistTimer();
     }
@@ -603,7 +651,11 @@
       else if (c === 'k') { toggleTheme(); input.value = ''; }
       else if (c === 'r') { saveSession('start.activeMode', 'command'); location.reload(); }
       else if (c === 's') { enterSettings(); }
-      else if (c === 't') { enterTimer(); }
+      else if (c === 't') {
+        /* a running timer comes back on display; otherwise set up a new one */
+        if (timerState) { showTimer(); input.value = ''; }
+        else { enterTimer(); }
+      }
       else if (c === 'u') { startCountup(); input.value = ''; }
       else if (c === 'h') { toggleHours(); input.value = ''; }
       else if (c === 'x') { stopTimer(true); input.value = ''; }
@@ -668,6 +720,12 @@
       e.preventDefault();
       enterSettings();
       input.focus();
+    } else if (k === 't') {
+      /* a running timer comes back on display (no focus steal, like c/k);
+         with no timer, enter timer setup like `s` enters settings */
+      e.preventDefault();
+      if (timerState) { showTimer(); }
+      else { enterTimer(); input.focus(); }
     } else if (k === 'c') {
       e.preventDefault();
       toggleClock();

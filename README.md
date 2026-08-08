@@ -38,7 +38,8 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `r` — refresh the page (stays in command mode)
   - `s` — **Settings**: open the settings mode (gear indicator)
   - `t` — **Timer**: set a countdown (timer indicator; type the duration, Enter
-    starts it)
+    starts it); when a timer is already running, `t` brings its display back
+    instead of setting a new one
   - `u` — start a count-up from `00:00` (stays in command mode)
   - `h` — toggle hours (`MM:SS` ↔ `HH:MM:SS`) for the active timer (stays in
     command mode)
@@ -64,6 +65,8 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `a` — refocus the url/search bar, keeping the current top mode
   - `/` — enter command mode directly
   - `s` — open settings mode directly
+  - `t` — show the running timer (focus stays where it is); with no timer, enter
+    timer setup and focus the bar
   - `c` — toggle the block-art clock (focus stays where it is)
   - `k` — toggle light/dark theme (focus stays where it is)
   Modifier combos (`Ctrl+…`, `Cmd+…`, `Alt+…`) are never intercepted. While any
@@ -88,13 +91,19 @@ Personal browser start page — minimalist, in the same style as the blog.
   that starts at `00:00`. The timer replaces the logo at the top in the same block-art
   style; it shows `MM:SS` by default and `HH:MM:SS` once the duration/elapsed time
   reaches one hour. `h` (in command mode) toggles the hours display manually; `x` stops
-  the timer and restores the logo (or the block-art clock if it was on). In timer mode,
-  digits and colons type the value, Enter starts the countdown, Backspace on an empty
-  prompt returns to command mode, and any other character exits keeping the text. The
-  timer survives reloads: its state (absolute end/start timestamps plus the hours
-  display) is saved in `localStorage` under `start.timer`, so a countdown resumes with
-  the correct remaining time, a count-up keeps counting, and a finished countdown stays
-  at `00:00`. Stopping it with `x` (or `c`) clears the saved state.
+  the timer and restores the logo (or the block-art clock if it was on). **The timer
+  keeps running in the background**: `c` while a timer is shown hides it and brings back
+  the clock (or `c` again, the logo) without stopping it, and `t` (in command mode or
+  the global shortcut) brings it back — a hidden countdown keeps the correct remaining
+  time, so switching to the clock or logo and coming back resumes right where it was.
+  In timer mode, digits and colons type the value, Enter starts the countdown,
+  Backspace on an empty prompt returns to command mode, and any other character exits
+  keeping the text. The timer survives reloads: its state (absolute end/start
+  timestamps, the hours display, and whether it was on display) is saved in
+  `localStorage` under `start.timer`, so a countdown resumes with the correct remaining
+  time, a count-up keeps counting, a finished countdown stays at `00:00`, and a hidden
+  timer reloads back into the clock/logo view. Stopping it with `x` clears the saved
+  state.
 
 ## Editing the logo
 
@@ -115,6 +124,8 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
 - `start.engine` — `bing`, `google`, `deepseek`, `wikipedia`; restored on load.
 - `start.theme` — `light` or `dark`; restored on load.
 - `start.clock` — `on` or `off`; restored on load (clock shown when `on`).
+- `start.timer` — the active timer: `{kind, end|start, hours, visible}` (absolute
+  timestamps); restored on load; removed by `x`.
 
 ## Deploy
 
