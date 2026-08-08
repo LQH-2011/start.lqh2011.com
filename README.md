@@ -53,6 +53,7 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `g` — Google (`https://www.google.com/search`)
   - `d` — DeepSeek chat (`https://chat.deepseek.com/?q=…`)
   - `w` — Wikipedia (`https://en.wikipedia.org/w/index.php`, `name="search"`)
+  - `f` — Jacky Forum (`https://f.m14ga.org/?q=…`)
   - `c` / `k` — same toggles as in command mode (stay in settings)
   - `r` — refresh the page (stays in settings)
   Engine keys exit settings back to the search bar with the new engine, and make
@@ -121,7 +122,7 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
   `sessionStorage` (NOT `localStorage`, so other same-origin tabs can't consume or
   overwrite it); set when `r` is pressed in command/settings mode, cleared after the
   reload restores that submode.
-- `start.engine` — `bing`, `google`, `deepseek`, `wikipedia`; restored on load.
+- `start.engine` — `bing`, `google`, `deepseek`, `wikipedia`, `jackyforum`; restored on load.
 - `start.theme` — `light` or `dark`; restored on load.
 - `start.clock` — `on` or `off`; restored on load (clock shown when `on`).
 - `start.timer` — the active timer: `{kind, end|start, hours, visible}` (absolute

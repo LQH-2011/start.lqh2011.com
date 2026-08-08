@@ -235,7 +235,8 @@
     bing:      { action: 'https://cn.bing.com/search',           q: 'q',      ph: 'Buscar en Bing…' },
     google:    { action: 'https://www.google.com/search',        q: 'q',      ph: 'Buscar en Google…' },
     deepseek:  { action: 'https://chat.deepseek.com/',           q: 'q',      ph: 'Buscar en DeepSeek…' },
-    wikipedia: { action: 'https://en.wikipedia.org/w/index.php', q: 'search', ph: 'Buscar en Wikipedia…' }
+    wikipedia: { action: 'https://en.wikipedia.org/w/index.php', q: 'search', ph: 'Buscar en Wikipedia…' },
+    jackyforum: { action: 'https://f.m14ga.org/',                 q: 'q',      ph: 'Buscar en Jacky Forum…' }
   };
 
   var engine = 'bing';
@@ -674,6 +675,7 @@
     else if (c === 'g') { setEngine('google');    selectTop('search'); }
     else if (c === 'd') { setEngine('deepseek');  selectTop('search'); }
     else if (c === 'w') { setEngine('wikipedia'); selectTop('search'); }
+    else if (c === 'f') { setEngine('jackyforum'); selectTop('search'); }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
     else if (c === 'r') { saveSession('start.activeMode', 'settings'); location.reload(); }
