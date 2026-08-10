@@ -106,6 +106,34 @@ Personal browser start page — minimalist, in the same style as the blog.
   timer reloads back into the clock/logo view. Stopping it with `x` clears the saved
   state.
 
+## Sync (cross-device settings)
+
+Since the settings sync backend landed, the page is **local-first**: it renders
+instantly from `localStorage` exactly as before, and syncs to a small API + database
+in the background. On the first visit from a device you enter the page password once;
+after that the device holds a token and behaves exactly as before.
+
+- **One-time password gate**: with no token in `localStorage`, a minimal overlay
+  (matching the page design) asks for the password. On success a signed token is
+  stored (`start.token`, valid 90 days); on failure the overlay shows an error.
+- **Pull on load**: after auth, settings are pulled from the DB and merged into
+  `localStorage` — **last-write-wins per key by timestamp** (each value carries an
+  epoch-ms timestamp; a newer local value is never clobbered, and an older server
+  value never overwrites a newer one). If anything changed the page reloads once so
+  the restored state matches your other devices (unless you're already typing — then
+  it applies on the next load).
+- **Push on change**: every existing `save()` (mode, engine, theme, clock, timer —
+  including stopping a timer, which syncs as a deletion) schedules a debounced POST
+  to the API. Offline? The change stays local and is retried on the next change or
+  load. Server-side last-write-wins protects against a stale offline device.
+- **Timers sync too**: `start.timer` stores absolute end/start timestamps, so a
+  countdown started on one device resumes on another with the correct remaining time.
+- **What syncs**: `start.mode`, `start.engine`, `start.clock`, `start.theme`,
+  `start.timer`. The sync bookkeeping itself lives in `localStorage` under
+  `start.sync.ts` (per-key timestamps) and is never uploaded.
+- **No visible chrome**: no status indicators were added — the page looks identical.
+  Sync failures are silent (console) and self-healing.
+
 ## Editing the logo
 
 Glyph maps live in the 5×7 grid definitions inside the `<svg>` `<defs>`; each glyph is a
@@ -127,7 +155,71 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
 - `start.clock` — `on` or `off`; restored on load (clock shown when `on`).
 - `start.timer` — the active timer: `{kind, end|start, hours, visible}` (absolute
   timestamps); restored on load; removed by `x`.
+- `start.token` — the sync session token (set after the one-time password; drives
+  the auth overlay and the API calls). Never leaves the browser.
+- `start.sync.ts` — sync bookkeeping: a JSON map of key → epoch-ms timestamp
+  (last-known write time per synced key). Used for last-write-wins merging; never
+  uploaded itself.
 
 ## Deploy
 
-Static site; push to `main` and GitHub Pages serves it at https://start.lqh2011.com.
+The **frontend stays on GitHub Pages** (push to `main`, https://start.lqh2011.com —
+unchanged). The **sync backend** is Vercel serverless functions + Neon Postgres at
+https://start-api.lqh2011.com.
+
+### 1. Neon (database)
+
+1. Create a project at https://console.neon.tech (free tier is plenty — one table).
+2. Copy the **pooled** connection string (Project Dashboard → Connect → Pooled,
+   looks like `postgres://…-pooler…`). It contains the DB password.
+3. Create the table — run `schema.sql` (one table, `kv`). Easiest: paste it into
+   Neon's SQL editor; or `psql "$DATABASE_URL" -f schema.sql`.
+
+### 2. Secrets (local)
+
+```sh
+npm install
+npm run hash            # prints a random password + its AUTH_PASSWORD_HASH
+openssl rand -hex 32    # -> AUTH_TOKEN_SECRET
+```
+Save the password somewhere safe — it's what you'll type on each new device.
+
+### 3. Vercel (API)
+
+1. Import this repo at https://vercel.com/new (Framework Preset: **Other**).
+   Vercel auto-detects the `api/` directory and deploys `POST /api/auth` and
+   `GET|POST /api/data` as serverless functions.
+2. Add these Environment Variables to the project (Settings → Environment Variables):
+   - `DATABASE_URL` — the Neon pooled connection string
+   - `AUTH_PASSWORD_HASH` — from `npm run hash` (format `scrypt$<salt>$<hash>`)
+   - `AUTH_TOKEN_SECRET` — the random hex
+   - `ALLOWED_ORIGIN` — optional, defaults to `https://start.lqh2011.com`
+3. Deploy; the API lives at `https://<your-project>.vercel.app/api/…`.
+
+### 4. DNS (subdomain)
+
+The main site's DNS does **not** move. In your DNS provider's panel add one record:
+`start-api` CNAME → `cname.vercel-dns.com`.
+Vercel provisions the TLS certificate automatically. The page already targets
+`https://start-api.lqh2011.com`; no frontend change needed.
+
+### Local development
+
+```sh
+cp .env.example .env    # fill DATABASE_URL, AUTH_PASSWORD_HASH, AUTH_TOKEN_SECRET
+npm install
+npm run dev             # http://127.0.0.1:8787 — page + API, one origin, real Postgres
+```
+
+### How it fits together
+
+```
+browser (any device)                Vercel (serverless)         Neon
+  start.lqh2011.com                   start-api.lqh2011.com      kv table
+  index.html (GH Pages)    ──HTTPS──▶  /api/auth (password→token)  ──▶ Postgres
+  localStorage + token     ◀──CORS───  /api/data (GET/POST kv)
+```
+Auth: one password, verified with scrypt against `AUTH_PASSWORD_HASH`; successful
+login returns an HMAC-signed token (90-day expiry) stored per device. Failed logins
+are rate-limited per IP (10 per 15 min) — but a correct password is never blocked.
+The API sets CORS headers for `start.lqh2011.com` and answers OPTIONS preflights.

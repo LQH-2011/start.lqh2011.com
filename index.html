@@ -131,6 +131,51 @@
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
   }
+  /* ---------- auth overlay (sync) ---------- */
+  .auth-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    z-index: 10;
+  }
+  .auth-overlay[hidden] { display: none; }
+  .auth-card {
+    width: 100%;
+    max-width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .auth-label { font-size: 14px; color: var(--muted); }
+  .auth-card input {
+    font: inherit;
+    font-size: 18px;
+    color: var(--ink);
+    padding: 10px 0 8px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+    outline: none;
+  }
+  .auth-card input:focus { border-bottom-color: var(--ink); }
+  .auth-card input::placeholder { color: var(--faint); }
+  .auth-error { font-size: 13px; color: #b00020; min-height: 16px; }
+  .auth-submit {
+    font: inherit;
+    font-size: 15px;
+    color: var(--bg);
+    background: var(--ink);
+    border: 0;
+    border-radius: 4px;
+    padding: 9px 0;
+    cursor: pointer;
+  }
+  .auth-submit:hover { opacity: .9; }
+  .auth-note { font-size: 12px; color: var(--faint); text-align: center; }
 </style>
 </head>
 <body>
@@ -219,6 +264,16 @@
     <a href="https://lqh2011.com/compressly" target="_blank" rel="noopener noreferrer">lqh2011.com/compressly</a>
   </nav>
 </main>
+<div class="auth-overlay" id="authOverlay" hidden>
+  <form class="auth-card" id="authForm" autocomplete="off">
+    <label class="auth-label" for="authPassword">Contraseña</label>
+    <input id="authPassword" type="password" autocomplete="current-password"
+           placeholder="••••••••" spellcheck="false">
+    <p class="auth-error" id="authError" role="alert"></p>
+    <button type="submit" class="auth-submit">Entrar</button>
+    <p class="auth-note">Tus ajustes se sincronizan entre tus dispositivos.</p>
+  </form>
+</div>
 <script>
 (function () {
   'use strict';
@@ -246,7 +301,12 @@
   var topMode = 'url';
 
   /* ---------- persistence ---------- */
-  function save(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+  function save(key, val) {
+    try { localStorage.setItem(key, val); } catch (e) {}
+    /* sync hook: a settings change also schedules a cross-device push
+       (defined in the second <script> block; absent on old browsers) */
+    if (window.__startSync) { window.__startSync.changed(key, val); }
+  }
   /* sessionStorage is per-tab: the one-shot activeMode handshake must not be
      shared with other same-origin tabs (a second tab could consume or
      overwrite it before this tab's reload lands). */
@@ -498,6 +558,8 @@
     if (timerTick) { clearInterval(timerTick); timerTick = null; }
     timerState = null;
     try { localStorage.removeItem('start.timer'); } catch (e) {}
+    /* sync hook: a stopped timer must be removed on other devices too */
+    if (window.__startSync) { window.__startSync.removed('start.timer'); }
   }
   function stopClockTimer() {
     if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
@@ -755,6 +817,185 @@
        defer so the submitted query is not affected */
     setTimeout(function () { input.value = ''; }, 0);
   });
+})();
+</script>
+<script>
+/* ---------- sync (auth + cross-device settings) ----------
+   The page is local-first: it renders from localStorage exactly as before.
+   This module only adds a one-time password gate per device, a pull of the
+   settings from the DB after auth (last-write-wins by timestamp), and a
+   debounced push of every save()/timer-stop. If the API is unreachable the
+   page keeps working with local state; the next change or reload retries. */
+(function () {
+  'use strict';
+
+  var API_BASE = 'https://start-api.lqh2011.com';
+  /* same-origin fallback: Vercel also serves the static page, so opening the
+     API host directly talks to the API with no CORS involved; likewise when
+     served locally by scripts/dev-server.js (npm run dev) */
+  if (['start-api.lqh2011.com', 'localhost', '127.0.0.1'].indexOf(location.hostname) !== -1) {
+    API_BASE = '';
+  }
+
+  var SYNC_KEYS = ['start.mode', 'start.engine', 'start.clock',
+                   'start.theme', 'start.timer'];
+  var TOKEN_KEY = 'start.token';
+  var TS_KEY = 'start.sync.ts';   /* key -> ms of the value in localStorage */
+
+  var overlay = document.getElementById('authOverlay');
+  var authForm = document.getElementById('authForm');
+  var passInput = document.getElementById('authPassword');
+  var authError = document.getElementById('authError');
+  var main = document.querySelector('main');
+
+  var token = null;
+  var readyToPush = false;
+  var pushTimer = null;
+  var interacted = false;
+  /* lastKnown[key] = the value we believe is current (local or pulled).
+     save() with an identical value is a no-op restore, not a user change —
+     it must not bump the timestamp or trigger a push. */
+  var lastKnown = {};
+  SYNC_KEYS.forEach(function (k) { lastKnown[k] = lsGet(k); });
+
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  function readTs() { try { return JSON.parse(lsGet(TS_KEY) || '{}'); } catch (e) { return {}; } }
+  function writeTs(map) { lsSet(TS_KEY, JSON.stringify(map)); }
+
+  /* ---------- overlay ---------- */
+  function showOverlay(msg) {
+    overlay.hidden = false;
+    main.inert = true;
+    authError.textContent = msg || '';
+    passInput.focus();
+  }
+  function hideOverlay() {
+    overlay.hidden = true;
+    main.inert = false;
+  }
+
+  /* ---------- auth ---------- */
+  function dropToken() { lsDel(TOKEN_KEY); token = null; }
+
+  authForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var password = passInput.value;
+    if (!password) return;
+    authError.textContent = '';
+    fetch(API_BASE + '/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: password })
+    }).then(function (r) {
+      if (r.status === 200) {
+        return r.json().then(function (data) {
+          token = data.token;
+          lsSet(TOKEN_KEY, token);
+          hideOverlay();
+          /* password typing doesn't count as page interaction — the user
+             expects the post-auth reload that lands on their synced settings */
+          interacted = false;
+          syncFromServer();
+        });
+      }
+      if (r.status === 429) { showOverlay('Demasiados intentos. Espera un momento.'); }
+      else { showOverlay('Contraseña incorrecta.'); }
+    }).catch(function () {
+      showOverlay('No se pudo conectar con el servidor.');
+    });
+  });
+
+  /* ---------- pull ---------- */
+  function syncFromServer() {
+    if (!token) return;
+    fetch(API_BASE + '/api/data', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    }).then(function (r) {
+      if (r.status === 401) { dropToken(); showOverlay(); return; }
+      if (!r.ok) { readyToPush = true; return; }
+      return r.json().then(function (data) {
+        var items = (data && data.items) || {};
+        var ts = readTs();
+        var changed = false;
+        SYNC_KEYS.forEach(function (k) {
+          var it = items[k];
+          if (!it || typeof it.ts !== 'number') return;
+          if (it.ts <= (ts[k] || 0)) return;   /* local is newer — keep it */
+          if (it.v === null || it.v === undefined) { lsDel(k); lastKnown[k] = null; }
+          else { lsSet(k, String(it.v)); lastKnown[k] = String(it.v); }
+          ts[k] = it.ts;
+          changed = true;
+        });
+        writeTs(ts);
+        readyToPush = true;
+        if (changed && !interacted) { location.reload(); return; }
+        /* flush local changes that never made it out (tab closed before the
+           debounce fired): pull with no merge = server is older, push now */
+        schedulePush();
+      });
+    }).catch(function () {
+      readyToPush = true;   /* offline: local-first, retry on next change/load */
+    });
+  }
+
+  /* ---------- push ---------- */
+  function schedulePush() {
+    if (pushTimer) { clearTimeout(pushTimer); }
+    pushTimer = setTimeout(sendChanges, 700);
+  }
+  function sendChanges() {
+    if (!token || !readyToPush) return;
+    var ts = readTs();
+    var items = {};
+    SYNC_KEYS.forEach(function (k) {
+      if (!ts[k]) return;   /* never touched locally: nothing to push */
+      items[k] = { v: lsGet(k), ts: ts[k] };
+    });
+    if (Object.keys(items).length === 0) return;
+    fetch(API_BASE + '/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+                 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ items: items })
+    }).then(function (r) {
+      if (r.status === 401) { dropToken(); showOverlay(); }
+    }).catch(function () { /* offline: retried on next change/load */ });
+  }
+
+  /* ---------- hooks from the main IIFE ---------- */
+  window.__startSync = {
+    changed: function (key, val) {
+      if (SYNC_KEYS.indexOf(key) === -1) return;
+      if (val === lastKnown[key]) return;   /* restore re-applying a value */
+      lastKnown[key] = val;
+      var ts = readTs();
+      ts[key] = Date.now();
+      writeTs(ts);
+      if (readyToPush) schedulePush();
+    },
+    removed: function (key) {
+      if (SYNC_KEYS.indexOf(key) === -1) return;
+      if (lastKnown[key] === null) return;
+      lastKnown[key] = null;
+      var ts = readTs();
+      ts[key] = Date.now();
+      writeTs(ts);
+      if (readyToPush) schedulePush();
+    }
+  };
+
+  /* ---------- init ---------- */
+  /* don't auto-reload over the user mid-typing */
+  window.addEventListener('keydown', function () { interacted = true; },
+                          { once: true, capture: true });
+  window.addEventListener('pointerdown', function () { interacted = true; },
+                          { once: true, capture: true });
+
+  token = lsGet(TOKEN_KEY);
+  if (token) { syncFromServer(); }
+  else { showOverlay(); }
 })();
 </script>
 </body>
