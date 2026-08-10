@@ -132,7 +132,11 @@ function getPool() {
     /* Verify Neon's TLS certificate by default (publicly trusted certs).
        Local dev against a self-signed Postgres opts out via
        PGSSL_REJECT_UNAUTHORIZED=false in .env (gitignored). max:1 keeps
-       per-instance connections tiny. */
+       per-instance connections tiny.
+       NOTE (CodeRabbit PR #31): an explicit `ssl` object always OVERRIDES
+       sslmode derived from the connection string — verified empirically on
+       pg 8.13.1 / pg-connection-string 2.14.0 (require/no-verify both lose
+       to the explicit object). If pg's resolution ever changes, revisit. */
     pool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== 'false' },
