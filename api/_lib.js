@@ -59,19 +59,29 @@ function verifyPassword(password) {
 }
 
 /* ---------- session tokens (stateless HMAC) ---------- */
-/* Token = base64url(payload) + '.' + base64url(hmac). Payload {sub, exp}. */
+/* Token = base64url(payload) + '.' + base64url(hmac). Payload {sub, exp}.
+   Fail closed when AUTH_TOKEN_SECRET is missing: an empty HMAC key would let
+   anyone forge a token, so signToken refuses to mint and verifyToken rejects. */
+function tokenSecret() {
+  var secret = process.env.AUTH_TOKEN_SECRET;
+  return (typeof secret === 'string' && secret.length > 0) ? secret : null;
+}
 function signToken() {
+  var secret = tokenSecret();
+  if (!secret) throw new Error('AUTH_TOKEN_SECRET is required');
   var payload = Buffer.from(JSON.stringify({ sub: 'owner', exp: Date.now() + TOKEN_TTL_MS }))
     .toString('base64url');
-  var sig = crypto.createHmac('sha256', process.env.AUTH_TOKEN_SECRET || '')
+  var sig = crypto.createHmac('sha256', secret)
     .update(payload).digest('base64url');
   return payload + '.' + sig;
 }
 function verifyToken(tok) {
+  var secret = tokenSecret();
+  if (!secret) return null;
   if (!tok || typeof tok !== 'string') return null;
   var parts = tok.split('.');
   if (parts.length !== 2) return null;
-  var expected = crypto.createHmac('sha256', process.env.AUTH_TOKEN_SECRET || '')
+  var expected = crypto.createHmac('sha256', secret)
     .update(parts[0]).digest('base64url');
   var a = Buffer.from(parts[1]);
   var b = Buffer.from(expected);
@@ -119,11 +129,13 @@ function clearRateLimit(req) {
 var pool = null;
 function getPool() {
   if (!pool) {
-    /* rejectUnauthorized:false is the standard config for Neon's pooled
-       connection over SSL. max:1 keeps per-instance connections tiny. */
+    /* Verify Neon's TLS certificate by default (publicly trusted certs).
+       Local dev against a self-signed Postgres opts out via
+       PGSSL_REJECT_UNAUTHORIZED=false in .env (gitignored). max:1 keeps
+       per-instance connections tiny. */
     pool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
+      ssl: { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== 'false' },
       max: 1,
       connectionTimeoutMillis: 5000
     });
@@ -137,23 +149,23 @@ async function getAll() {
   return items;
 }
 /* Upsert with server-side last-write-wins: an older timestamp never
-   overwrites a newer one (protects against a stale offline device). */
+   overwrites a newer one (protects against a stale offline device).
+   Deletes are TOMBSTONES (NULL value) with the same LWW predicate — a
+   physical DELETE would let a stale delete kill a newer value, and let a
+   stale value re-INSERT (no row to conflict with) after a newer delete. */
 async function upsertAll(items) {
   var client = await getPool().connect();
   try {
     await client.query('BEGIN');
     for (var key in items) {
       var it = items[key];
-      if (it === null || it.v === null || it.v === undefined) {
-        await client.query('DELETE FROM kv WHERE key = $1', [key]);
-      } else {
-        await client.query(
-          'INSERT INTO kv (key, value, updated_at) VALUES ($1, $2, $3) ' +
-          'ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at ' +
-          'WHERE kv.updated_at < EXCLUDED.updated_at',
-          [key, String(it.v), Number(it.ts)]
-        );
-      }
+      var value = (it === null || it.v === null || it.v === undefined) ? null : String(it.v);
+      await client.query(
+        'INSERT INTO kv (key, value, updated_at) VALUES ($1, $2, $3) ' +
+        'ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at ' +
+        'WHERE kv.updated_at < EXCLUDED.updated_at',
+        [key, value, Number(it.ts)]
+      );
     }
     await client.query('COMMIT');
   } catch (e) {

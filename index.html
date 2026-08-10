@@ -268,7 +268,7 @@
   <form class="auth-card" id="authForm" autocomplete="off">
     <label class="auth-label" for="authPassword">Contraseña</label>
     <input id="authPassword" type="password" autocomplete="current-password"
-           placeholder="••••••••" spellcheck="false">
+           placeholder="••••••••" spellcheck="false" required>
     <p class="auth-error" id="authError" role="alert"></p>
     <button type="submit" class="auth-submit">Entrar</button>
     <p class="auth-note">Tus ajustes se sincronizan entre tus dispositivos.</p>
@@ -879,10 +879,12 @@
   /* ---------- auth ---------- */
   function dropToken() { lsDel(TOKEN_KEY); token = null; }
 
+  var authSubmit = authForm.querySelector('.auth-submit');
   authForm.addEventListener('submit', function (e) {
     e.preventDefault();
     var password = passInput.value;
-    if (!password) return;
+    if (!password || authSubmit.disabled) return;
+    authSubmit.disabled = true;   /* no concurrent auth attempts (rate limit) */
     authError.textContent = '';
     fetch(API_BASE + '/api/auth', {
       method: 'POST',
@@ -893,6 +895,7 @@
         return r.json().then(function (data) {
           token = data.token;
           lsSet(TOKEN_KEY, token);
+          passInput.value = '';   /* don't keep the plaintext in the DOM */
           hideOverlay();
           /* password typing doesn't count as page interaction — the user
              expects the post-auth reload that lands on their synced settings */
@@ -904,6 +907,8 @@
       else { showOverlay('Contraseña incorrecta.'); }
     }).catch(function () {
       showOverlay('No se pudo conectar con el servidor.');
+    }).then(function () {
+      authSubmit.disabled = false;
     });
   });
 
@@ -945,7 +950,15 @@
     if (pushTimer) { clearTimeout(pushTimer); }
     pushTimer = setTimeout(sendChanges, 700);
   }
-  function sendChanges() {
+  /* flush a pending push when the tab is closed / navigated away — the
+     debounce would otherwise drop it (recovery only on the next load) */
+  window.addEventListener('pagehide', function () {
+    if (!pushTimer) return;
+    clearTimeout(pushTimer);
+    pushTimer = null;
+    sendChanges(true);
+  });
+  function sendChanges(flush) {
     if (!token || !readyToPush) return;
     var ts = readTs();
     var items = {};
@@ -958,7 +971,8 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json',
                  'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ items: items })
+      body: JSON.stringify({ items: items }),
+      keepalive: !!flush   /* let the request outlive the closing page */
     }).then(function (r) {
       if (r.status === 401) { dropToken(); showOverlay(); }
     }).catch(function () { /* offline: retried on next change/load */ });

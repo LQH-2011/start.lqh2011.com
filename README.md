@@ -156,7 +156,8 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
 - `start.timer` — the active timer: `{kind, end|start, hours, visible}` (absolute
   timestamps); restored on load; removed by `x`.
 - `start.token` — the sync session token (set after the one-time password; drives
-  the auth overlay and the API calls). Never leaves the browser.
+  the auth overlay and the API calls). It is sent to the API as a bearer token
+  and is never included in the synchronized key/value payload.
 - `start.sync.ts` — sync bookkeeping: a JSON map of key → epoch-ms timestamp
   (last-known write time per synced key). Used for last-write-wins merging; never
   uploaded itself.
@@ -213,11 +214,11 @@ npm run dev             # http://127.0.0.1:8787 — page + API, one origin, real
 
 ### How it fits together
 
-```
+```text
 browser (any device)                Vercel (serverless)         Neon
   start.lqh2011.com                   start-api.lqh2011.com      kv table
-  index.html (GH Pages)    ──HTTPS──▶  /api/auth (password→token)  ──▶ Postgres
-  localStorage + token     ◀──CORS───  /api/data (GET/POST kv)
+  index.html (GH Pages)    ──HTTPS──▶  /api/auth (password→token)
+  localStorage + token     ◀──CORS───  /api/data (GET/POST kv)  ──▶ Postgres
 ```
 Auth: one password, verified with scrypt against `AUTH_PASSWORD_HASH`; successful
 login returns an HMAC-signed token (90-day expiry) stored per device. Failed logins
