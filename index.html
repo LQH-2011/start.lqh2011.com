@@ -448,7 +448,13 @@
       if (it && typeof it === 'object' &&
           typeof it.label === 'string' && it.label.length &&
           typeof it.url === 'string' && it.url.length) {
-        bookmarks.push({ label: it.label, url: it.url });
+        /* Re-validate persisted URLs with the same rules as the opener:
+           dangerous schemes (javascript:, data:) are dropped entirely and
+           bare domains are stored normalized with https://. */
+        var url = normalizeUrl(it.url);
+        if (url && url.length <= MAX_BOOKMARK_URL) {
+          bookmarks.push({ label: it.label, url: url });
+        }
       }
     });
   }
@@ -526,7 +532,8 @@
         'Esc o Retroceso = volver a comandos');
     } else if (mode === 'links') {
       setHint('Favoritos',
-        '1-' + digitMax() + ' Abrir · a Añadir · e Editar · x Borrar',
+        (bookmarks.length ? ('1-' + digitMax() + ' Abrir · ') : '') +
+        'a Añadir · e Editar · x Borrar',
         'Esc o Retroceso = volver a ajustes');
     } else {
       setHint('', '', '');   /* url / search / timer: no panel */
@@ -985,7 +992,7 @@
       var n = Number(c);
       if (editArmed)        { editArmed = false; startEdit(n); }
       else if (deleteArmed) { deleteArmed = false; startDelete(n); }
-      else { openPinned(n); }
+      else { openPinned(n); input.value = ''; }
     }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }

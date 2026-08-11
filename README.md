@@ -81,7 +81,8 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `c` / `k` / `r` — same toggles/refresh as in settings
   Backspace on an empty prompt cancels a flow and climbs one level (links →
   settings → command); Escape cancels a flow or climbs the same stack mid-typing;
-  Enter on an empty prompt exits to the top. Bookmarks are saved to `localStorage`
+  with no flow active, Enter on an empty prompt exits to the top (during a flow
+  Enter commits the current step). Bookmarks are saved to `localStorage`
   (`start.bookmarks`) and sync across devices like the other settings.
 - **Global shortcuts (bar not focused)**: after clicking a bookmark link (or anywhere
   else), the bar loses focus — these page-level keys still work:
