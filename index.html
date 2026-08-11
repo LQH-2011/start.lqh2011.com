@@ -119,22 +119,6 @@
     text-decoration: underline;
     text-underline-offset: 4px;
   }
-  /* ---------- mode hint panel (command / settings / links) ---------- */
-  /* A minimal menu legend shown only while a sub-mode owns the bar, so the
-     command/settings/links hierarchy is self-documenting. */
-  .hint {
-    width: 100%;
-    max-width: 440px;
-    margin: -24px 0 30px;
-    font-size: 13px;
-    line-height: 1.9;
-    color: var(--muted);
-    text-align: center;
-  }
-  .hint[hidden] { display: none; }
-  .hint-title { font-size: 14px; color: var(--ink); }
-  .hint-keys { margin-top: 2px; }
-  .hint-note { font-size: 12px; color: var(--faint); }
   .sr-only {
     position: absolute;
     width: 1px; height: 1px;
@@ -271,11 +255,6 @@
            autocomplete="off" autofocus spellcheck="false">
     <button type="submit" class="sr-only">Abrir o buscar</button>
   </form>
-  <div class="hint" id="modeHint" hidden>
-    <p class="hint-title" id="hintTitle"></p>
-    <p class="hint-keys" id="hintKeys"></p>
-    <p class="hint-note" id="hintNote"></p>
-  </div>
   <nav class="links" aria-label="Favoritos"></nav>
 </main>
 <div class="auth-overlay" id="authOverlay" hidden>
@@ -299,10 +278,6 @@
   var cmdIndicator = document.getElementById('cmdIndicator');
   var settingsIcon = document.getElementById('settingsIcon');
   var timerIcon = document.getElementById('timerIcon');
-  var hint = document.getElementById('modeHint');
-  var hintTitle = document.getElementById('hintTitle');
-  var hintKeys = document.getElementById('hintKeys');
-  var hintNote = document.getElementById('hintNote');
 
   var ENGINES = {
     bing:      { action: 'https://cn.bing.com/search',           q: 'q',      ph: 'Buscar en Bing…' },
@@ -372,7 +347,6 @@
     else if (next === 'settings') { input.placeholder = 'Ajustes…'; }
     else if (next === 'links') { input.placeholder = 'Favoritos…'; }
     else if (next === 'timer') { input.placeholder = 'Temporizador'; }
-    renderHint();
   }
   function enterCmd() { setMode('command'); input.value = ''; }
   function enterSettings() { editArmed = false; deleteArmed = false; setMode('settings'); input.value = ''; }
@@ -485,61 +459,6 @@
     return k.length === 1 && k >= '1' && k <= String(digitMax());
   }
 
-  /* ---------- mode hint panel ---------- */
-  /* The sub-modes form a small menu hierarchy (command -> settings -> links).
-     A legend is shown under the bar only while a sub-mode owns it, so the
-     available keys are visible instead of hidden knowledge. It also reflects
-     the multi-step bookmark flows (add/edit/delete prompts). */
-  function setHint(title, keys, note) {
-    if (mode === 'command' || mode === 'settings' || mode === 'links') {
-      hint.hidden = false;
-      hintTitle.textContent = title;
-      hintKeys.textContent = keys;
-      hintNote.textContent = note || '';
-    } else {
-      hint.hidden = true;
-      hintTitle.textContent = '';
-      hintKeys.textContent = '';
-      hintNote.textContent = '';
-    }
-  }
-  function renderHint() {
-    if (promptState) {
-      if (promptState.kind === 'delete') {
-        var target = bookmarks[promptState.idx];
-        setHint('Borrar favorito',
-                '«' + (target ? target.label : '') + '»',
-                's = sí · Enter u otra tecla = no · Esc cancela');
-      } else if (promptState.step === 'url') {
-        setHint('Nueva URL', 'Escribe la dirección y pulsa Enter', 'Esc cancela');
-      } else {
-        setHint('Nombre del favorito',
-                'Escribe una etiqueta y pulsa Enter',
-                'Enter con campo vacío = ' +
-                (promptState.kind === 'edit' ? 'dejar el actual' : 'usar la URL'));
-      }
-      return;
-    }
-    if (mode === 'command') {
-      setHint('Comandos',
-        'a Abrir · b Buscar · c Reloj · k Tema · s Ajustes · t Temporizador · ' +
-        'u Cronómetro · h Horas · x Parar · r Recargar',
-        bookmarks.length ? ('1-' + digitMax() + ' abren un favorito') : '');
-    } else if (mode === 'settings') {
-      setHint('Ajustes',
-        'Motor: b Bing · g Google · d DeepSeek · w Wikipedia · f Foro · ' +
-        'c Reloj · k Tema · l Favoritos · r Recargar',
-        'Esc o Retroceso = volver a comandos');
-    } else if (mode === 'links') {
-      setHint('Favoritos',
-        (bookmarks.length ? ('1-' + digitMax() + ' Abrir · ') : '') +
-        'a Añadir · e Editar · x Borrar',
-        'Esc o Retroceso = volver a ajustes');
-    } else {
-      setHint('', '', '');   /* url / search / timer: no panel */
-    }
-  }
-
   /* ---------- bookmark add/edit/delete flows ---------- */
   /* Multi-step prompts reuse the single bar: each Enter advances one step,
      Escape (or Backspace on an empty bar) cancels back to the links menu.
@@ -550,14 +469,12 @@
     promptState = null;
     input.value = '';
     input.placeholder = 'Favoritos…';
-    renderHint();
   }
   function cancelPrompt() { exitPrompt(); }
   function startAdd() {
     input.value = '';
     input.placeholder = 'URL del favorito…';
     promptState = { kind: 'add', step: 'url' };
-    renderHint();
     input.focus();
   }
   function startEdit(n) {
@@ -565,14 +482,12 @@
     promptState = { kind: 'edit', idx: n - 1, step: 'url' };
     input.value = bookmarks[n - 1].url;
     input.placeholder = 'URL (Enter = dejar igual)…';
-    renderHint();
   }
   function startDelete(n) {
     if (n < 1 || n > bookmarks.length) return;
     promptState = { kind: 'delete', idx: n - 1 };
     input.value = '';
     input.placeholder = '¿Borrar? (s/n)';
-    renderHint();
   }
   function commitPrompt() {
     var ps = promptState;
@@ -591,16 +506,13 @@
       if (ps.step === 'url') {
         var raw = input.value.trim();
         var url = normalizeUrl(raw);
-        if (!raw || !url || url.length > MAX_BOOKMARK_URL) {
-          hintNote.textContent = 'URL no válida';
-          return;
-        }
+        /* invalid (or empty): stay in the URL step — nothing else to show */
+        if (!raw || !url || url.length > MAX_BOOKMARK_URL) return;
         ps.url = url;
         ps.raw = raw;
         ps.step = 'label';
         input.value = '';
         input.placeholder = 'Nombre (Enter = la URL)…';
-        renderHint();
         return;
       }
       var label = (input.value.trim() || ps.raw).slice(0, 200);
@@ -616,16 +528,13 @@
         var raw2 = input.value.trim();
         if (raw2) {
           var url2 = normalizeUrl(raw2);
-          if (!url2 || url2.length > MAX_BOOKMARK_URL) {
-            hintNote.textContent = 'URL no válida';
-            return;
-          }
+          /* invalid: stay in the URL step */
+          if (!url2 || url2.length > MAX_BOOKMARK_URL) return;
           bookmarks[ps.idx].url = url2;
         }
         ps.step = 'label';
         input.value = bookmarks[ps.idx].label;
         input.placeholder = 'Nombre (Enter = dejar igual)…';
-        renderHint();
         return;
       }
       var label2 = input.value.trim().slice(0, 200);
@@ -986,8 +895,8 @@
     /* during a multi-step prompt the keys are field content, not menu keys */
     if (promptState) return;
     if (c === 'a')      { startAdd(); }
-    else if (c === 'e') { editArmed = true; input.value = ''; hintNote.textContent = 'Pulsa el número del favorito…'; }
-    else if (c === 'x') { deleteArmed = true; input.value = ''; hintNote.textContent = 'Pulsa el número del favorito…'; }
+    else if (c === 'e') { editArmed = true; input.value = ''; }
+    else if (c === 'x') { deleteArmed = true; input.value = ''; }
     else if (isDigitKey(c)) {
       var n = Number(c);
       if (editArmed)        { editArmed = false; startEdit(n); }
