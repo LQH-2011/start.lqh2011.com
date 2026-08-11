@@ -14,7 +14,9 @@ Personal browser start page — minimalist, in the same style as the blog.
     prepended); type `aaa` (or `/` or `-`) to enter command mode. When the
     bar is not focused, global shortcuts still work (`a`, `/`, `-`, `s`, `c`, `k` —
     see Features).
-  - **Bookmarks**: edit the `<nav class="links">` list.
+  - **Bookmarks**: rendered from `localStorage` (`start.bookmarks`) and editable in
+    settings → links (`a` add, `e` edit, `x` delete, digits open). First run uses the
+    original hardcoded list as defaults.
 
 ## Features
 
@@ -47,7 +49,8 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `x` — stop the timer and restore the logo (or the clock if it was on)
     (stays in command mode)
   Any other character exits command mode and keeps the text as-is in the selected top
-  mode; Enter or Backspace (on an empty prompt) in command mode returns to the top.
+  mode; Enter on an empty prompt returns to the top, and Backspace (on an empty prompt)
+  or Escape climb one level up.
 - **Settings mode**: `s` from command mode opens it (gear indicator). Then
   (case-insensitive):
   - `b` — Bing (default)
@@ -56,12 +59,30 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `w` — Wikipedia (`https://en.wikipedia.org/w/index.php`, `name="search"`)
   - `f` — Jacky Forum (`https://f.m14ga.org/?q=…`)
   - `c` / `k` — same toggles as in command mode (stay in settings)
+  - `l` — **Favoritos**: open the links/bookmarks submenu
   - `r` — refresh the page (stays in settings)
   Engine keys exit settings back to the search bar with the new engine, and make
   the search bar the selected top mode (so backspace/Enter return to it). Backspace
   on an empty prompt goes one layer up (settings → command); Enter returns straight
   to the top. The engine choice is saved in `localStorage` (`start.engine`) and
   restored on load.
+- **Bookmarks (Favoritos)**: `l` in settings mode opens the links submenu — the gear
+  indicator stays and a hint panel under the bar lists the available keys. Then
+  (case-insensitive):
+  - `1`–`9` — open that bookmark in a new tab (digits cover the current bookmark
+    count, up to 9)
+  - `a` — **Añadir**: type the URL and press Enter (bare domains get `https://`
+    prepended, dangerous schemes like `javascript:` are rejected); then type a label
+    and press Enter (an empty label uses the URL itself)
+  - `e` — **Editar**: press the bookmark number, then edit the URL and the label —
+    the current values are pre-filled, and Enter on an empty field keeps them
+  - `x` — **Borrar**: press the bookmark number, then confirm with `s` (or `y` —
+    any other key cancels)
+  - `c` / `k` / `r` — same toggles/refresh as in settings
+  Backspace on an empty prompt cancels a flow and climbs one level (links →
+  settings → command); Escape cancels a flow or climbs the same stack mid-typing;
+  Enter on an empty prompt exits to the top. Bookmarks are saved to `localStorage`
+  (`start.bookmarks`) and sync across devices like the other settings.
 - **Global shortcuts (bar not focused)**: after clicking a bookmark link (or anywhere
   else), the bar loses focus — these page-level keys still work:
   - `a` — refocus the url/search bar, keeping the current top mode
@@ -74,13 +95,13 @@ Personal browser start page — minimalist, in the same style as the blog.
   Modifier combos (`Ctrl+…`, `Cmd+…`, `Alt+…`) are never intercepted. While any
   editable element is focused (the bar, a textarea, `contenteditable`) these keys
   type into it normally (in-bar `/` or `-` still enters command mode).
-- **Pinned-link keys (`1`–`6`)**: press a digit to open the matching bookmark in a
-  new tab — `1` is the first link in the bookmarks list, `6` the last. They work
-  in two situations only: when the bar is **not** focused, and while the bar is
-  focused in **command** mode (`aaa`, `/`, or `-`). In url/search/settings mode the
-  digits type into the bar normally (so URLs like `1.1.1.1` still work).
-  Modifier combos (`Ctrl+1` / `Cmd+1` tab switching, etc.) and held-key repeats
-  are never hijacked.
+- **Pinned-link keys (`1`–`9`)**: press a digit to open the matching bookmark in a
+  new tab — `1` is the first link in the bookmarks list; the range follows the current
+  bookmark count (max 9). They work in three situations: when the bar is **not**
+  focused, while the bar is focused in **command** mode (`aaa`, `/`, or `-`), and in
+  **links** mode. In url/search/settings mode the digits type into the bar normally
+  (so URLs like `1.1.1.1` still work). Modifier combos (`Ctrl+1` / `Cmd+1` tab
+  switching, etc.) and held-key repeats are never hijacked.
 - **Block-art clock**: type `aaa` then `c` in the search bar to swap the logo for a live
   clock in the same 5×7 pixel-block style (digits and colon are glyphs in the same SVG
   `<defs>`; the seconds tick every 1000 ms). Press `c` again to switch back. The choice
@@ -130,8 +151,8 @@ after that the device holds a token and behaves exactly as before.
 - **Timers sync too**: `start.timer` stores absolute end/start timestamps, so a
   countdown started on one device resumes on another with the correct remaining time.
 - **What syncs**: `start.mode`, `start.engine`, `start.clock`, `start.theme`,
-  `start.timer`. The sync bookkeeping itself lives in `localStorage` under
-  `start.sync.ts` (per-key timestamps) and is never uploaded.
+  `start.timer`, `start.bookmarks`. The sync bookkeeping itself lives in
+  `localStorage` under `start.sync.ts` (per-key timestamps) and is never uploaded.
 - **No visible chrome**: no status indicators were added — the page looks identical.
   Sync failures are silent (console) and self-healing.
 
@@ -156,6 +177,9 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
 - `start.clock` — `on` or `off`; restored on load (clock shown when `on`).
 - `start.timer` — the active timer: `{kind, end|start, hours, visible}` (absolute
   timestamps); restored on load; removed by `x`.
+- `start.bookmarks` — the bookmark list: a JSON array of `{label, url}` objects,
+  edited from settings → links; restored on load; first run defaults to the original
+  hardcoded links.
 - `start.token` — the sync session token (set after the one-time password; drives
   the auth overlay and the API calls). It is sent to the API as a bearer token
   and is never included in the synchronized key/value payload.
