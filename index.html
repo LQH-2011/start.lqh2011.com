@@ -696,15 +696,16 @@
   restoreTimer();   /* a saved timer takes the display slot (after clock restore) */
 
   /* ---------- input: mode triggers & commands ---------- */
-  /* Any mode: typing "aaa" (or "/") enters command mode.
+  /* Any mode: typing "aaa" (or "/" or "-") enters command mode.
      Command mode: a=Abrir (url top), b=Buscar (search top), c=clock, k=theme,
-     s=settings. Settings mode: b/g/d/w engines, c/k toggles.
+     s (or "/" or "-" again) = settings, t=timer, u=count-up, h=hours, x=stop.
+     Settings mode: b/g/d/w/f engines, c/k toggles.
      Any other character exits to the selected top mode keeping the text. */
   input.addEventListener('input', function () {
     var v = input.value;
     var c = v.toLowerCase();   /* commands are case-insensitive */
     if (mode === 'url' || mode === 'search') {
-      if (c === 'aaa' || c === '/') enterCmd();
+      if (c === 'aaa' || c === '/' || c === '-') enterCmd();
       return;
     }
     if (mode === 'command') {
@@ -713,7 +714,7 @@
       else if (c === 'c') { toggleClock(); input.value = ''; }
       else if (c === 'k') { toggleTheme(); input.value = ''; }
       else if (c === 'r') { saveSession('start.activeMode', 'command'); location.reload(); }
-      else if (c === 's') { enterSettings(); }
+      else if (c === 's' || c === '/' || c === '-') { enterSettings(); }
       else if (c === 't') {
         /* a running timer comes back on display; otherwise set up a new one */
         if (timerState) { showTimer(); input.value = ''; }
@@ -776,7 +777,7 @@
       /* activate the url/search bar, keeping the current top mode */
       e.preventDefault();
       input.focus();
-    } else if (k === '/') {
+    } else if (k === '/' || k === '-') {
       e.preventDefault();
       enterCmd();
       input.focus();
