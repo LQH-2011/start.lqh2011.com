@@ -119,6 +119,22 @@
     text-decoration: underline;
     text-underline-offset: 4px;
   }
+  /* ---------- mode hint panel (command / settings / links) ---------- */
+  /* A minimal menu legend shown only while a sub-mode owns the bar, so the
+     command/settings/links hierarchy is self-documenting. */
+  .hint {
+    width: 100%;
+    max-width: 440px;
+    margin: -24px 0 30px;
+    font-size: 13px;
+    line-height: 1.9;
+    color: var(--muted);
+    text-align: center;
+  }
+  .hint[hidden] { display: none; }
+  .hint-title { font-size: 14px; color: var(--ink); }
+  .hint-keys { margin-top: 2px; }
+  .hint-note { font-size: 12px; color: var(--faint); }
   .sr-only {
     position: absolute;
     width: 1px; height: 1px;
@@ -255,14 +271,12 @@
            autocomplete="off" autofocus spellcheck="false">
     <button type="submit" class="sr-only">Abrir o buscar</button>
   </form>
-  <nav class="links" aria-label="Favoritos">
-    <a href="https://app.lobehub.com" target="_blank" rel="noopener noreferrer">app.lobehub.com</a>
-    <a href="https://www.rae.es/diccionario-estudiante" target="_blank" rel="noopener noreferrer">rae.es/diccionario-estudiante</a>
-    <a href="https://f.m14ga.org" target="_blank" rel="noopener noreferrer">f.m14ga.org</a>
-    <a href="https://zhujingqi.com/chat" target="_blank" rel="noopener noreferrer">zhujingqi.com/chat</a>
-    <a href="https://outlook.live.com" target="_blank" rel="noopener noreferrer">outlook.live.com</a>
-    <a href="https://lqh2011.com/compressly" target="_blank" rel="noopener noreferrer">lqh2011.com/compressly</a>
-  </nav>
+  <div class="hint" id="modeHint" hidden>
+    <p class="hint-title" id="hintTitle"></p>
+    <p class="hint-keys" id="hintKeys"></p>
+    <p class="hint-note" id="hintNote"></p>
+  </div>
+  <nav class="links" aria-label="Favoritos"></nav>
 </main>
 <div class="auth-overlay" id="authOverlay" hidden>
   <form class="auth-card" id="authForm" autocomplete="off">
@@ -285,6 +299,10 @@
   var cmdIndicator = document.getElementById('cmdIndicator');
   var settingsIcon = document.getElementById('settingsIcon');
   var timerIcon = document.getElementById('timerIcon');
+  var hint = document.getElementById('modeHint');
+  var hintTitle = document.getElementById('hintTitle');
+  var hintKeys = document.getElementById('hintKeys');
+  var hintNote = document.getElementById('hintNote');
 
   var ENGINES = {
     bing:      { action: 'https://cn.bing.com/search',           q: 'q',      ph: 'Buscar en Bing…' },
@@ -295,8 +313,11 @@
   };
 
   var engine = 'bing';
-  /* mode: 'url' (default), 'search', 'command', 'settings'.
-     topMode: the selected top-level mode ('url' or 'search'), persisted. */
+  /* mode: 'url' (default), 'search', 'command', 'settings', 'links', 'timer'.
+     topMode: the selected top-level mode ('url' or 'search'), persisted.
+     Sub-mode stack: top <- command <- settings <- links. Backspace on an
+     empty bar (or Escape) climbs one level; Enter on an empty bar exits to
+     the top. */
   var mode = 'url';
   var topMode = 'url';
 
@@ -333,24 +354,29 @@
   /* ---------- modes ---------- */
   /* url (://) — type a URL, Enter opens it in a new tab (default)
      search (magnifier) — engine search, Enter opens results in a new tab
-     command (❯) — a/b/c/k/s
-     settings (gear) — b/g/d/w engines + c/k toggles
+     command (❯) — a/b/c/k/r/s/t/u/h/x + 1-9 quick links
+     settings (gear) — b/g/d/w/f engines, c/k toggles, l links
+     links (gear) — bookmarks: 1-9 open, a add, e edit, x delete
+     timer — countdown/count-up value entry
      topMode is the selected url/search mode, persisted as start.mode. */
   function setMode(next) {
     mode = next;
     urlIcon.hidden = next !== 'url';
     searchIcon.hidden = next !== 'search';
     cmdIndicator.hidden = next !== 'command';
-    settingsIcon.hidden = next !== 'settings';
+    settingsIcon.hidden = (next !== 'settings' && next !== 'links');
     timerIcon.hidden = next !== 'timer';
     if (next === 'url') { input.placeholder = 'Abrir URL…'; }
     else if (next === 'search') { input.placeholder = ENGINES[engine].ph; }
     else if (next === 'command') { input.placeholder = 'Comando…'; }
     else if (next === 'settings') { input.placeholder = 'Ajustes…'; }
+    else if (next === 'links') { input.placeholder = 'Favoritos…'; }
     else if (next === 'timer') { input.placeholder = 'Temporizador'; }
+    renderHint();
   }
   function enterCmd() { setMode('command'); input.value = ''; }
-  function enterSettings() { setMode('settings'); input.value = ''; }
+  function enterSettings() { editArmed = false; deleteArmed = false; setMode('settings'); input.value = ''; }
+  function enterLinks() { editArmed = false; deleteArmed = false; setMode('links'); input.value = ''; }
   function selectTop(next) {
     topMode = next;
     save('start.mode', next);
@@ -383,19 +409,232 @@
     input.value = '';
   }
 
-  /* ---------- pinned links (1-6) ---------- */
-  /* Keys 1-6 open the six bookmark links below when the bar is NOT focused,
-     and while the bar is focused in COMMAND mode only. In url/search/settings
-     the digits type into the bar normally. Modifier combos (Ctrl/Cmd/Alt+1 —
-     browser tab switching) and held-key repeats are never hijacked. */
-  var pinned = Array.prototype.slice.call(document.querySelectorAll('.links a'));
+  /* ---------- bookmarks (pinned links 1-9) ---------- */
+  /* Bookmarks are data, not markup: a list of {label, url} objects persisted
+     as start.bookmarks (JSON) and synced like any other setting. First run
+     uses DEFAULT_BOOKMARKS (the original hardcoded list); renderLinks() draws
+     them into <nav class="links">. They are editable from settings -> links
+     (a Añadir / e Editar / x Borrar, digits open).
+     Keys 1-9 open a bookmark when the bar is NOT focused and while the bar is
+     focused in COMMAND mode (in url/search/settings the digits type into the
+     bar normally). Modifier combos (Ctrl/Cmd/Alt+1 — browser tab switching)
+     and held-key repeats are never hijacked. */
+  var DEFAULT_BOOKMARKS = [
+    { label: 'app.lobehub.com', url: 'https://app.lobehub.com' },
+    { label: 'rae.es/diccionario-estudiante', url: 'https://www.rae.es/diccionario-estudiante' },
+    { label: 'f.m14ga.org', url: 'https://f.m14ga.org' },
+    { label: 'zhujingqi.com/chat', url: 'https://zhujingqi.com/chat' },
+    { label: 'outlook.live.com', url: 'https://outlook.live.com' },
+    { label: 'lqh2011.com/compressly', url: 'https://lqh2011.com/compressly' }
+  ];
+  var bookmarks = [];
+  var linksNav = document.querySelector('.links');
+  var editArmed = false;     /* `e` in links mode: next digit starts an edit */
+  var deleteArmed = false;   /* `x` in links mode: next digit asks to delete */
+  var promptState = null;    /* multi-step add/edit/delete flows (below) */
+
+  function loadBookmarks() {
+    var raw = null;
+    try { raw = localStorage.getItem('start.bookmarks'); } catch (e) {}
+    /* First run: no key yet -> the classic hardcoded list. */
+    if (!raw) { bookmarks = DEFAULT_BOOKMARKS.slice(); return; }
+    var arr = null;
+    try { arr = JSON.parse(raw); } catch (e) {}
+    /* Corrupt data -> fall back. An EMPTY valid list is a real user state
+       (everything deleted) and must stay empty, not resurrect defaults. */
+    if (!Array.isArray(arr)) { bookmarks = DEFAULT_BOOKMARKS.slice(); return; }
+    bookmarks = [];
+    arr.forEach(function (it) {
+      if (it && typeof it === 'object' &&
+          typeof it.label === 'string' && it.label.length &&
+          typeof it.url === 'string' && it.url.length) {
+        /* Re-validate persisted URLs with the same rules as the opener:
+           dangerous schemes (javascript:, data:) are dropped entirely and
+           bare domains are stored normalized with https://. */
+        var url = normalizeUrl(it.url);
+        if (url && url.length <= MAX_BOOKMARK_URL) {
+          bookmarks.push({ label: it.label, url: url });
+        }
+      }
+    });
+  }
+
+  function saveBookmarks() {
+    save('start.bookmarks', JSON.stringify(bookmarks));
+  }
+
+  function renderLinks() {
+    linksNav.textContent = '';
+    bookmarks.forEach(function (b) {
+      var a = document.createElement('a');
+      a.href = b.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = b.label;
+      a.title = b.url;
+      linksNav.appendChild(a);
+    });
+  }
 
   function openPinned(n) {
-    if (n < 1 || n > pinned.length) return;
-    window.open(pinned[n - 1].href, '_blank', 'noopener');
+    if (n < 1 || n > bookmarks.length) return;
+    window.open(bookmarks[n - 1].url, '_blank', 'noopener');
   }
+  function digitMax() { return Math.min(9, bookmarks.length); }
   function isDigitKey(k) {
-    return k.length === 1 && k >= '1' && k <= '6';
+    return k.length === 1 && k >= '1' && k <= String(digitMax());
+  }
+
+  /* ---------- mode hint panel ---------- */
+  /* The sub-modes form a small menu hierarchy (command -> settings -> links).
+     A legend is shown under the bar only while a sub-mode owns it, so the
+     available keys are visible instead of hidden knowledge. It also reflects
+     the multi-step bookmark flows (add/edit/delete prompts). */
+  function setHint(title, keys, note) {
+    if (mode === 'command' || mode === 'settings' || mode === 'links') {
+      hint.hidden = false;
+      hintTitle.textContent = title;
+      hintKeys.textContent = keys;
+      hintNote.textContent = note || '';
+    } else {
+      hint.hidden = true;
+      hintTitle.textContent = '';
+      hintKeys.textContent = '';
+      hintNote.textContent = '';
+    }
+  }
+  function renderHint() {
+    if (promptState) {
+      if (promptState.kind === 'delete') {
+        var target = bookmarks[promptState.idx];
+        setHint('Borrar favorito',
+                '«' + (target ? target.label : '') + '»',
+                's = sí · Enter u otra tecla = no · Esc cancela');
+      } else if (promptState.step === 'url') {
+        setHint('Nueva URL', 'Escribe la dirección y pulsa Enter', 'Esc cancela');
+      } else {
+        setHint('Nombre del favorito',
+                'Escribe una etiqueta y pulsa Enter',
+                'Enter con campo vacío = ' +
+                (promptState.kind === 'edit' ? 'dejar el actual' : 'usar la URL'));
+      }
+      return;
+    }
+    if (mode === 'command') {
+      setHint('Comandos',
+        'a Abrir · b Buscar · c Reloj · k Tema · s Ajustes · t Temporizador · ' +
+        'u Cronómetro · h Horas · x Parar · r Recargar',
+        bookmarks.length ? ('1-' + digitMax() + ' abren un favorito') : '');
+    } else if (mode === 'settings') {
+      setHint('Ajustes',
+        'Motor: b Bing · g Google · d DeepSeek · w Wikipedia · f Foro · ' +
+        'c Reloj · k Tema · l Favoritos · r Recargar',
+        'Esc o Retroceso = volver a comandos');
+    } else if (mode === 'links') {
+      setHint('Favoritos',
+        (bookmarks.length ? ('1-' + digitMax() + ' Abrir · ') : '') +
+        'a Añadir · e Editar · x Borrar',
+        'Esc o Retroceso = volver a ajustes');
+    } else {
+      setHint('', '', '');   /* url / search / timer: no panel */
+    }
+  }
+
+  /* ---------- bookmark add/edit/delete flows ---------- */
+  /* Multi-step prompts reuse the single bar: each Enter advances one step,
+     Escape (or Backspace on an empty bar) cancels back to the links menu.
+     URLs are validated with the same normalizeUrl as the opener, so
+     javascript:/data: are rejected and bare domains get https://. */
+  var MAX_BOOKMARK_URL = 2048;
+  function exitPrompt() {
+    promptState = null;
+    input.value = '';
+    input.placeholder = 'Favoritos…';
+    renderHint();
+  }
+  function cancelPrompt() { exitPrompt(); }
+  function startAdd() {
+    input.value = '';
+    input.placeholder = 'URL del favorito…';
+    promptState = { kind: 'add', step: 'url' };
+    renderHint();
+    input.focus();
+  }
+  function startEdit(n) {
+    if (n < 1 || n > bookmarks.length) return;
+    promptState = { kind: 'edit', idx: n - 1, step: 'url' };
+    input.value = bookmarks[n - 1].url;
+    input.placeholder = 'URL (Enter = dejar igual)…';
+    renderHint();
+  }
+  function startDelete(n) {
+    if (n < 1 || n > bookmarks.length) return;
+    promptState = { kind: 'delete', idx: n - 1 };
+    input.value = '';
+    input.placeholder = '¿Borrar? (s/n)';
+    renderHint();
+  }
+  function commitPrompt() {
+    var ps = promptState;
+    if (!ps) return;
+    if (ps.kind === 'delete') {
+      var v = input.value.trim().toLowerCase();
+      if ((v === 's' || v === 'y') && bookmarks[ps.idx]) {
+        bookmarks.splice(ps.idx, 1);
+        saveBookmarks();
+        renderLinks();
+      }
+      exitPrompt();
+      return;
+    }
+    if (ps.kind === 'add') {
+      if (ps.step === 'url') {
+        var raw = input.value.trim();
+        var url = normalizeUrl(raw);
+        if (!raw || !url || url.length > MAX_BOOKMARK_URL) {
+          hintNote.textContent = 'URL no válida';
+          return;
+        }
+        ps.url = url;
+        ps.raw = raw;
+        ps.step = 'label';
+        input.value = '';
+        input.placeholder = 'Nombre (Enter = la URL)…';
+        renderHint();
+        return;
+      }
+      var label = (input.value.trim() || ps.raw).slice(0, 200);
+      bookmarks.push({ label: label, url: ps.url });
+      exitPrompt();
+      saveBookmarks();
+      renderLinks();
+      return;
+    }
+    if (ps.kind === 'edit') {
+      if (!bookmarks[ps.idx]) { exitPrompt(); return; }
+      if (ps.step === 'url') {
+        var raw2 = input.value.trim();
+        if (raw2) {
+          var url2 = normalizeUrl(raw2);
+          if (!url2 || url2.length > MAX_BOOKMARK_URL) {
+            hintNote.textContent = 'URL no válida';
+            return;
+          }
+          bookmarks[ps.idx].url = url2;
+        }
+        ps.step = 'label';
+        input.value = bookmarks[ps.idx].label;
+        input.placeholder = 'Nombre (Enter = dejar igual)…';
+        renderHint();
+        return;
+      }
+      var label2 = input.value.trim().slice(0, 200);
+      if (label2) { bookmarks[ps.idx].label = label2; }
+      exitPrompt();
+      saveBookmarks();
+      renderLinks();
+      return;
+    }
   }
 
   /* ---------- logo / block-art clock ---------- */
@@ -687,53 +926,51 @@
     var savedMode = localStorage.getItem('start.mode');
     if (savedMode === 'url' || savedMode === 'search') { topMode = savedMode; }
     var savedActiveMode = sessionStorage.getItem('start.activeMode');
-    if (savedActiveMode === 'command' || savedActiveMode === 'settings') {
+    if (savedActiveMode === 'command' || savedActiveMode === 'settings' ||
+        savedActiveMode === 'links') {
       restoredSubmode = savedActiveMode;
     }
   } catch (e) {}
   try { sessionStorage.removeItem('start.activeMode'); } catch (e) {}
+  loadBookmarks();
+  renderLinks();
   setMode(restoredSubmode || topMode);
   restoreTimer();   /* a saved timer takes the display slot (after clock restore) */
+  /* The sync module (second <script> block) calls this after a pull applied
+     server changes while the user was already interacting, so the bookmark
+     nav re-renders live instead of waiting for the next reload. */
+  window.__startOnPull = function () { loadBookmarks(); renderLinks(); };
 
-  /* ---------- input: mode triggers & commands ---------- */
+  /* ---------- sub-mode key handling ---------- */
   /* Any mode: typing "aaa" (or "/" or "-") enters command mode.
      Command mode: a=Abrir (url top), b=Buscar (search top), c=clock, k=theme,
-     s (or "/" or "-" again) = settings, t=timer, u=count-up, h=hours, x=stop.
-     Settings mode: b/g/d/w/f engines, c/k toggles.
-     Any other character exits to the selected top mode keeping the text. */
-  input.addEventListener('input', function () {
-    var v = input.value;
-    var c = v.toLowerCase();   /* commands are case-insensitive */
-    if (mode === 'url' || mode === 'search') {
-      if (c === 'aaa' || c === '/' || c === '-') enterCmd();
-      return;
+     s (or "/" or "-" again) = settings, t=timer, u=count-up, h=hours, x=stop,
+     r=reload. Settings mode: b/g/d/w/f engines, c/k toggles, l=links,
+     r=reload. Links mode: 1-9 open, a=add, e=edit, x=delete, c/k toggles,
+     r=reload.
+     Any other character exits to the selected top mode keeping the text;
+     in links mode an unknown key pops one level UP to settings, where the
+     same keystroke is then evaluated (e.g. `g` in links picks Google). */
+  function handleCommandKey(c) {
+    if (c === 'a')      { selectTop('url'); }
+    else if (c === 'b') { selectTop('search'); }
+    else if (c === 'c') { toggleClock(); input.value = ''; }
+    else if (c === 'k') { toggleTheme(); input.value = ''; }
+    else if (c === 'r') { saveSession('start.activeMode', 'command'); location.reload(); }
+    else if (c === 's' || c === '/' || c === '-') { enterSettings(); }
+    else if (c === 't') {
+      /* a running timer comes back on display; otherwise set up a new one */
+      if (timerState) { showTimer(); input.value = ''; }
+      else { enterTimer(); }
     }
-    if (mode === 'command') {
-      if (c === 'a')      { selectTop('url'); }
-      else if (c === 'b') { selectTop('search'); }
-      else if (c === 'c') { toggleClock(); input.value = ''; }
-      else if (c === 'k') { toggleTheme(); input.value = ''; }
-      else if (c === 'r') { saveSession('start.activeMode', 'command'); location.reload(); }
-      else if (c === 's' || c === '/' || c === '-') { enterSettings(); }
-      else if (c === 't') {
-        /* a running timer comes back on display; otherwise set up a new one */
-        if (timerState) { showTimer(); input.value = ''; }
-        else { enterTimer(); }
-      }
-      else if (c === 'u') { startCountup(); input.value = ''; }
-      else if (c === 'h') { toggleHours(); input.value = ''; }
-      else if (c === 'x') { stopTimer(true); input.value = ''; }
-      else { exitToTop(); }
-      return;
-    }
-    if (mode === 'timer') {
-      /* countdown value: digits and colons only; anything else is a typo —
-         leave timer mode keeping the text in the selected top mode */
-      if (!/^[0-9:]*$/.test(v)) exitToTop();
-      return;
-    }
-    /* settings mode: picking an engine selects search as the top mode, so
-       backspace/Enter from command mode return to the search bar */
+    else if (c === 'u') { startCountup(); input.value = ''; }
+    else if (c === 'h') { toggleHours(); input.value = ''; }
+    else if (c === 'x') { stopTimer(true); input.value = ''; }
+    else { exitToTop(); }
+  }
+  /* settings mode: picking an engine selects search as the top mode, so
+     backspace/Enter from command mode return to the search bar */
+  function handleSettingsKey(c) {
     if (c === 'b')      { setEngine('bing');     selectTop('search'); }
     else if (c === 'g') { setEngine('google');    selectTop('search'); }
     else if (c === 'd') { setEngine('deepseek');  selectTop('search'); }
@@ -741,22 +978,74 @@
     else if (c === 'f') { setEngine('jackyforum'); selectTop('search'); }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
+    else if (c === 'l') { enterLinks(); }
     else if (c === 'r') { saveSession('start.activeMode', 'settings'); location.reload(); }
     else { exitToTop(); }
+  }
+  function handleLinksKey(c) {
+    /* during a multi-step prompt the keys are field content, not menu keys */
+    if (promptState) return;
+    if (c === 'a')      { startAdd(); }
+    else if (c === 'e') { editArmed = true; input.value = ''; hintNote.textContent = 'Pulsa el número del favorito…'; }
+    else if (c === 'x') { deleteArmed = true; input.value = ''; hintNote.textContent = 'Pulsa el número del favorito…'; }
+    else if (isDigitKey(c)) {
+      var n = Number(c);
+      if (editArmed)        { editArmed = false; startEdit(n); }
+      else if (deleteArmed) { deleteArmed = false; startDelete(n); }
+      else { openPinned(n); input.value = ''; }
+    }
+    else if (c === 'c') { toggleClock(); input.value = ''; }
+    else if (c === 'k') { toggleTheme(); input.value = ''; }
+    else if (c === 'r') { saveSession('start.activeMode', 'links'); location.reload(); }
+    else { editArmed = false; deleteArmed = false; enterSettings(); handleSettingsKey(c); }
+  }
+
+  input.addEventListener('input', function () {
+    var v = input.value;
+    var c = v.toLowerCase();   /* commands are case-insensitive */
+    if (mode === 'url' || mode === 'search') {
+      if (c === 'aaa' || c === '/' || c === '-') enterCmd();
+      return;
+    }
+    if (mode === 'command') { handleCommandKey(c); return; }
+    if (mode === 'timer') {
+      /* countdown value: digits and colons only; anything else is a typo —
+         leave timer mode keeping the text in the selected top mode */
+      if (!/^[0-9:]*$/.test(v)) exitToTop();
+      return;
+    }
+    if (mode === 'settings') { handleSettingsKey(c); return; }
+    if (mode === 'links') { handleLinksKey(c); return; }
   });
 
-  /* Backspace on an empty prompt goes one layer up: settings -> command -> top.
-     Keys 1-6 open the pinned links ONLY while the bar is focused in COMMAND
-     mode (no modifiers, no repeat). In url/search/settings the digits type
-     into the bar normally. */
+  /* Backspace on an empty prompt goes one layer up: links -> settings ->
+     command -> top; Escape climbs the same stack at any time and cancels a
+     bookmark prompt mid-typing. Keys 1-9 open the pinned links ONLY while
+     the bar is focused in COMMAND mode (no modifiers, no repeat). In
+     url/search/settings the digits type into the bar normally. */
   input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && (mode === 'command' || mode === 'settings' ||
+                               mode === 'links' || mode === 'timer')) {
+      e.preventDefault();
+      if (promptState) { cancelPrompt(); }
+      else if (mode === 'links') { enterSettings(); }
+      else if (mode === 'settings') { enterCmd(); }
+      else if (mode === 'command') { exitToTop(); }
+      else if (mode === 'timer') { enterCmd(); }
+      return;
+    }
     if (mode === 'command' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && isDigitKey(e.key)) {
       e.preventDefault();
       openPinned(Number(e.key));
       return;
     }
     if (e.key !== 'Backspace' || input.value !== '') return;
-    if (mode === 'settings') { e.preventDefault(); enterCmd(); }
+    if (mode === 'links') {
+      e.preventDefault();
+      if (promptState) { cancelPrompt(); }
+      else { enterSettings(); }
+    }
+    else if (mode === 'settings') { e.preventDefault(); enterCmd(); }
     else if (mode === 'command') { e.preventDefault(); exitToTop(); }
     else if (mode === 'timer') { e.preventDefault(); enterCmd(); }
   });
@@ -798,7 +1087,7 @@
       e.preventDefault();
       toggleTheme();
     } else if (isDigitKey(k)) {
-      /* 1-6 open the pinned links */
+      /* 1-9 open the pinned links */
       e.preventDefault();
       openPinned(Number(k));
     }
@@ -807,6 +1096,12 @@
   form.addEventListener('submit', function (e) {
     if (mode === 'url') { e.preventDefault(); openUrl(); return; }
     if (mode === 'timer') { e.preventDefault(); commitTimer(); return; }
+    if (mode === 'links') {
+      e.preventDefault();
+      if (promptState) { commitPrompt(); }
+      else { exitToTop(); input.value = ''; }
+      return;
+    }
     if (mode === 'command' || mode === 'settings') {
       /* Enter with nothing typed (or any Enter in a sub-mode) returns to the top */
       e.preventDefault();
@@ -839,7 +1134,7 @@
   }
 
   var SYNC_KEYS = ['start.mode', 'start.engine', 'start.clock',
-                   'start.theme', 'start.timer'];
+                   'start.theme', 'start.timer', 'start.bookmarks'];
   var TOKEN_KEY = 'start.token';
   var TS_KEY = 'start.sync.ts';   /* key -> ms of the value in localStorage */
 
@@ -936,7 +1231,12 @@
         });
         writeTs(ts);
         readyToPush = true;
-        if (changed && !interacted) { location.reload(); return; }
+        if (changed) {
+          /* data-driven UI (the bookmark nav) re-renders live even while the
+             user is interacting; static CSS state reloads below */
+          if (window.__startOnPull) { window.__startOnPull(); }
+          if (!interacted) { location.reload(); return; }
+        }
         /* flush local changes that never made it out (tab closed before the
            debounce fired): pull with no merge = server is older, push now */
         schedulePush();
