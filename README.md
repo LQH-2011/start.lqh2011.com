@@ -11,8 +11,8 @@ Personal browser start page — minimalist, in the same style as the blog.
   - **Bar**: the input doubles as a URL opener (default) and a search bar.
     Type a URL and press Enter to open it in a new tab (a bare domain — or a
     `host:port` like `localhost:3000` / `example.com:8080` — gets `https://`
-    prepended); type `aaa` (or `/`) to enter command mode. When the
-    bar is not focused, global shortcuts still work (`a`, `/`, `s`, `c`, `k` —
+    prepended); type `aaa` (or `/` or `-`) to enter command mode. When the
+    bar is not focused, global shortcuts still work (`a`, `/`, `-`, `s`, `c`, `k` —
     see Features).
   - **Bookmarks**: edit the `<nav class="links">` list.
 
@@ -27,7 +27,7 @@ Personal browser start page — minimalist, in the same style as the blog.
   (`localhost:3000`, `example.com:8080`) gets `https://` prepended automatically, URLs
   with an allowed scheme (`https://…`, `mailto:…`, `tel:…`) open as-is, and any other
   scheme (`javascript:`, `data:`, …) is rejected.
-- **Command mode**: type `aaa` (or `Aaa` / `/`, case-insensitive) in the bar to
+- **Command mode**: type `aaa` (or `Aaa` / `/` / `-`, case-insensitive) in the bar to
   enter command mode (the indicator swaps to a `❯` on the left; the input stays
   left-aligned). Then (letters are case-insensitive):
   - `a` — **Abrir**: back to the URL opener (selected top mode, persisted)
@@ -36,7 +36,8 @@ Personal browser start page — minimalist, in the same style as the blog.
     command mode)
   - `k` — toggle light/dark theme (stays in command mode)
   - `r` — refresh the page (stays in command mode)
-  - `s` — **Settings**: open the settings mode (gear indicator)
+  - `s` — **Settings**: open the settings mode (gear indicator); typing `/` or
+    `-` again in command mode does the same
   - `t` — **Timer**: set a countdown (timer indicator; type the duration, Enter
     starts it); when a timer is already running, `t` brings its display back
     instead of setting a new one
@@ -64,7 +65,7 @@ Personal browser start page — minimalist, in the same style as the blog.
 - **Global shortcuts (bar not focused)**: after clicking a bookmark link (or anywhere
   else), the bar loses focus — these page-level keys still work:
   - `a` — refocus the url/search bar, keeping the current top mode
-  - `/` — enter command mode directly
+  - `/` or `-` — enter command mode directly
   - `s` — open settings mode directly
   - `t` — show the running timer (focus stays where it is); with no timer, enter
     timer setup and focus the bar
@@ -72,11 +73,11 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `k` — toggle light/dark theme (focus stays where it is)
   Modifier combos (`Ctrl+…`, `Cmd+…`, `Alt+…`) are never intercepted. While any
   editable element is focused (the bar, a textarea, `contenteditable`) these keys
-  type into it normally (in-bar `/` still enters command mode).
+  type into it normally (in-bar `/` or `-` still enters command mode).
 - **Pinned-link keys (`1`–`6`)**: press a digit to open the matching bookmark in a
   new tab — `1` is the first link in the bookmarks list, `6` the last. They work
   in two situations only: when the bar is **not** focused, and while the bar is
-  focused in **command** mode (`aaa` or `/`). In url/search/settings mode the
+  focused in **command** mode (`aaa`, `/`, or `-`). In url/search/settings mode the
   digits type into the bar normally (so URLs like `1.1.1.1` still work).
   Modifier combos (`Ctrl+1` / `Cmd+1` tab switching, etc.) and held-key repeats
   are never hijacked.
