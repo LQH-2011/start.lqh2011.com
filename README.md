@@ -67,7 +67,7 @@ Personal browser start page — minimalist, in the same style as the blog.
   to the top. The engine choice is saved in `localStorage` (`start.engine`) and
   restored on load.
 - **Bookmarks (Favoritos)**: `l` in settings mode opens the links submenu — the gear
-  indicator stays and a hint panel under the bar lists the available keys. Then
+  indicator stays. Then
   (case-insensitive):
   - `1`–`9` — open that bookmark in a new tab (digits cover the current bookmark
     count, up to 9)
