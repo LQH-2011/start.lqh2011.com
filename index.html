@@ -490,16 +490,35 @@
     input.placeholder = '¿Borrar? (s/n)';
   }
   /* logout reuses the same single bar; `e` in settings arms it. Confirming
-     wipes ALL local state (token, settings, bookmarks) and reloads, so the
-     auth overlay returns — the DB keeps synced data for other devices. */
+     wipes ALL local state in both storages (token, settings, bookmarks) and
+     reloads, so the auth overlay returns — the DB keeps synced data for
+     other devices. */
   function startLogout() {
     promptState = { kind: 'logout' };
     input.value = '';
     input.placeholder = '¿Cerrar sesión? (s/n)';
   }
   function performLogout() {
-    try { localStorage.clear(); } catch (e) {}
-    try { sessionStorage.clear(); } catch (e) {}
+    /* Best-effort wipe of both storages, then verify before reloading: a
+       silent clear failure would reload straight back into a logged-in
+       session (sync re-auths with the surviving token). */
+    try { localStorage.clear(); } catch (e) { console.error('logout: localStorage.clear failed', e); }
+    try { sessionStorage.clear(); } catch (e) { console.error('logout: sessionStorage.clear failed', e); }
+    var tokenGone = true;
+    try { tokenGone = localStorage.getItem('start.token') === null; } catch (e) { tokenGone = true; }
+    if (!tokenGone) {
+      /* storage refused the wipe (private mode / quota): drop the token
+         specifically; if that also fails, keep the user on the page and
+         say so instead of pretending the logout happened */
+      try { localStorage.removeItem('start.token'); } catch (e) { console.error('logout: start.token removal failed', e); }
+      try { tokenGone = localStorage.getItem('start.token') === null; } catch (e) {}
+    }
+    if (!tokenGone) {
+      promptState = null;
+      input.value = '';
+      input.placeholder = 'No se pudo cerrar sesión.';
+      return;
+    }
     location.reload();
   }
   function commitPrompt() {
