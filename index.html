@@ -330,7 +330,7 @@
   /* url (://) — type a URL, Enter opens it in a new tab (default)
      search (magnifier) — engine search, Enter opens results in a new tab
      command (❯) — a/b/c/k/r/s/t/u/h/x + 1-9 quick links
-     settings (gear) — b/g/d/w/f engines, c/k toggles, l links
+     settings (gear) — b/g/d/w/f engines, c/k toggles, l links, e logout
      links (gear) — bookmarks: 1-9 open, a add, e edit, x delete
      timer — countdown/count-up value entry
      topMode is the selected url/search mode, persisted as start.mode. */
@@ -468,7 +468,7 @@
   function exitPrompt() {
     promptState = null;
     input.value = '';
-    input.placeholder = 'Favoritos…';
+    input.placeholder = (mode === 'settings') ? 'Ajustes…' : 'Favoritos…';
   }
   function cancelPrompt() { exitPrompt(); }
   function startAdd() {
@@ -489,9 +489,47 @@
     input.value = '';
     input.placeholder = '¿Borrar? (s/n)';
   }
+  /* logout reuses the same single bar; `e` in settings arms it. Confirming
+     wipes ALL local state in both storages (token, settings, bookmarks) and
+     reloads, so the auth overlay returns — the DB keeps synced data for
+     other devices. */
+  function startLogout() {
+    promptState = { kind: 'logout' };
+    input.value = '';
+    input.placeholder = '¿Cerrar sesión? (s/n)';
+  }
+  function performLogout() {
+    /* Best-effort wipe of both storages, then verify before reloading: a
+       silent clear failure would reload straight back into a logged-in
+       session (sync re-auths with the surviving token). */
+    try { localStorage.clear(); } catch (e) { console.error('logout: localStorage.clear failed', e); }
+    try { sessionStorage.clear(); } catch (e) { console.error('logout: sessionStorage.clear failed', e); }
+    var tokenGone = true;
+    try { tokenGone = localStorage.getItem('start.token') === null; } catch (e) { tokenGone = true; }
+    if (!tokenGone) {
+      /* storage refused the wipe (private mode / quota): drop the token
+         specifically; if that also fails, keep the user on the page and
+         say so instead of pretending the logout happened */
+      try { localStorage.removeItem('start.token'); } catch (e) { console.error('logout: start.token removal failed', e); }
+      try { tokenGone = localStorage.getItem('start.token') === null; } catch (e) {}
+    }
+    if (!tokenGone) {
+      promptState = null;
+      input.value = '';
+      input.placeholder = 'No se pudo cerrar sesión.';
+      return;
+    }
+    location.reload();
+  }
   function commitPrompt() {
     var ps = promptState;
     if (!ps) return;
+    if (ps.kind === 'logout') {
+      var v = input.value.trim().toLowerCase();
+      if (v === 's' || v === 'y') { performLogout(); return; }
+      exitPrompt();
+      return;
+    }
     if (ps.kind === 'delete') {
       var v = input.value.trim().toLowerCase();
       if ((v === 's' || v === 'y') && bookmarks[ps.idx]) {
@@ -855,7 +893,8 @@
      Command mode: a=Abrir (url top), b=Buscar (search top), c=clock, k=theme,
      s (or "/" or "-" again) = settings, t=timer, u=count-up, h=hours, x=stop,
      r=reload. Settings mode: b/g/d/w/f engines, c/k toggles, l=links,
-     r=reload. Links mode: 1-9 open, a=add, e=edit, x=delete, c/k toggles,
+     e=logout (confirm s/y, wipes storage + reload), r=reload. Links mode:
+     1-9 open, a=add, e=edit, x=delete, c/k toggles,
      r=reload.
      Any other character exits to the selected top mode keeping the text;
      in links mode an unknown key pops one level UP to settings, where the
@@ -880,6 +919,7 @@
   /* settings mode: picking an engine selects search as the top mode, so
      backspace/Enter from command mode return to the search bar */
   function handleSettingsKey(c) {
+    if (promptState) return;   /* logout confirm: typed keys are the answer */
     if (c === 'b')      { setEngine('bing');     selectTop('search'); }
     else if (c === 'g') { setEngine('google');    selectTop('search'); }
     else if (c === 'd') { setEngine('deepseek');  selectTop('search'); }
@@ -888,6 +928,7 @@
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
     else if (c === 'l') { enterLinks(); }
+    else if (c === 'e') { startLogout(); }
     else if (c === 'r') { saveSession('start.activeMode', 'settings'); location.reload(); }
     else { exitToTop(); }
   }
@@ -954,7 +995,11 @@
       if (promptState) { cancelPrompt(); }
       else { enterSettings(); }
     }
-    else if (mode === 'settings') { e.preventDefault(); enterCmd(); }
+    else if (mode === 'settings') {
+      e.preventDefault();
+      if (promptState) { cancelPrompt(); }
+      else { enterCmd(); }
+    }
     else if (mode === 'command') { e.preventDefault(); exitToTop(); }
     else if (mode === 'timer') { e.preventDefault(); enterCmd(); }
   });
@@ -1012,10 +1057,11 @@
       return;
     }
     if (mode === 'command' || mode === 'settings') {
-      /* Enter with nothing typed (or any Enter in a sub-mode) returns to the top */
+      /* Enter during a prompt commits it; otherwise (empty bar or any
+         Enter in a sub-mode) returns to the top */
       e.preventDefault();
-      exitToTop();
-      input.value = '';
+      if (promptState) { commitPrompt(); }
+      else { exitToTop(); input.value = ''; }
       return;
     }
     /* search mode: results open in a new tab, so clear the input for the next query;

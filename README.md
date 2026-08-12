@@ -60,6 +60,11 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `f` — Jacky Forum (`https://f.m14ga.org/?q=…`)
   - `c` / `k` — same toggles as in command mode (stay in settings)
   - `l` — **Favoritos**: open the links/bookmarks submenu
+  - `e` — **Cerrar sesión** (logout): type `s` (or `y`) and press **Enter**
+    to wipe `localStorage` and `sessionStorage` — sync token, settings and
+    bookmarks — and reload the page, so the password overlay returns; type
+    any other response and press Enter, or press Escape or Backspace on an
+    empty prompt, to cancel back to settings
   - `r` — refresh the page (stays in settings)
   Engine keys exit settings back to the search bar with the new engine, and make
   the search bar the selected top mode (so backspace/Enter return to it). Backspace
@@ -139,6 +144,10 @@ after that the device holds a token and behaves exactly as before.
 - **One-time password gate**: with no token in `localStorage`, a minimal overlay
   (matching the page design) asks for the password. On success a signed token is
   stored (`start.token`, valid 90 days); on failure the overlay shows an error.
+  To log out, press `e` in settings mode, type `s` (or `y`) and press Enter:
+  the page wipes `localStorage` and `sessionStorage` — token included — and
+  reloads, so the overlay returns on that device (the synced data stays in
+  the DB for the other devices). Any other response on Enter cancels.
 - **Pull on load**: after auth, settings are pulled from the DB and merged into
   `localStorage` — **last-write-wins per key by timestamp** (each value carries an
   epoch-ms timestamp; a newer local value is never clobbered, and an older server
