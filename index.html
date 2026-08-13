@@ -279,7 +279,9 @@
     </span>
     <label class="sr-only" for="q">Abrir URL o buscar</label>
     <input id="q" type="search" name="q" placeholder="Abrir URL…"
-           autocomplete="off" autofocus spellcheck="false">
+           autocomplete="off" autofocus spellcheck="false"
+           role="combobox" aria-autocomplete="list" aria-controls="urlHistory"
+           aria-expanded="false">
     <button type="submit" class="sr-only">Abrir o buscar</button>
     <div class="url-history" id="urlHistory" role="listbox" aria-label="Historial de URLs" hidden></div>
   </form>
@@ -416,13 +418,16 @@
 
   /* ---------- url history (dropdown) ---------- */
   /* The URL opener records the 20 most recent opened URLs as start.history
-     (JSON array of normalized URLs, most recent first, deduped) and syncs
-     them like any other setting. While the bar has text in url mode, a
-     dropdown lists the entries matching the typed letters (case-insensitive
-     substring on the scheme-stripped URL); the first match is highlighted.
-     ArrowUp/Down move the highlight (wrapping), Enter or a click opens the
-     highlighted entry, Escape/blur hides the menu. The menu never appears
-     in the other modes or with an empty bar. */
+     (JSON array of normalized URLs, most recent first, deduped). The list is
+     DEVICE-LOCAL by design: raw URLs can carry private identifiers/tokens,
+     so they are never sent through the settings sync. While the bar has text
+     in url mode, a dropdown lists the entries matching the typed letters
+     (case-insensitive substring on the scheme-stripped URL); the first match
+     is highlighted. ArrowUp/Down move the highlight (wrapping), Enter or a
+     click opens the highlighted entry, Escape/blur hides the menu. The menu
+     never appears in the other modes or with an empty bar. The input is
+     exposed to assistive tech as a combobox (aria-controls/expanded/
+     activedescendant) linked to the listbox. */
   var HISTORY_LIMIT = 20;
   var history = [];       /* normalized URLs, most recent first */
   var matches = [];       /* current filtered view for the dropdown */
@@ -476,6 +481,7 @@
     historyMenu.textContent = '';
     matches.forEach(function (url, i) {
       var el = document.createElement('div');
+      el.id = 'urlHistory-item-' + i;   /* stable ID for aria-activedescendant */
       el.className = 'url-history-item' + (i === historyIndex ? ' active' : '');
       el.setAttribute('role', 'option');
       if (i === historyIndex) { el.setAttribute('aria-selected', 'true'); }
@@ -488,6 +494,10 @@
       });
       historyMenu.appendChild(el);
     });
+    /* keep the combobox's active descendant in sync with the highlight */
+    if (historyIndex >= 0 && historyIndex < matches.length) {
+      input.setAttribute('aria-activedescendant', 'urlHistory-item-' + historyIndex);
+    }
   }
   function moveHistoryIndex(delta) {
     if (matches.length === 0) return;
@@ -507,6 +517,8 @@
     historyMenu.hidden = true;
     historyIndex = -1;
     matches = [];
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
   }
   function updateHistoryMenu() {
     if (mode !== 'url') { hideHistoryMenu(); return; }
@@ -516,6 +528,7 @@
     if (matches.length === 0) { hideHistoryMenu(); return; }
     historyIndex = 0;   /* first match highlighted: Enter opens it */
     historyMenu.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
     renderHistoryMenu();
   }
 
@@ -1022,9 +1035,9 @@
   restoreTimer();   /* a saved timer takes the display slot (after clock restore) */
   /* The sync module (second <script> block) calls this after a pull applied
      server changes while the user was already interacting, so the bookmark
-     nav re-renders live and an open history dropdown re-filters instead of
-     waiting for the next reload. */
-  window.__startOnPull = function () { loadBookmarks(); renderLinks(); loadHistory(); updateHistoryMenu(); };
+     nav re-renders live instead of waiting for the next reload. (URL history
+     is device-local and never part of a pull.) */
+  window.__startOnPull = function () { loadBookmarks(); renderLinks(); };
 
   /* ---------- sub-mode key handling ---------- */
   /* Any mode: typing "aaa" (or "/" or "-") enters command mode.
@@ -1244,8 +1257,7 @@
   }
 
   var SYNC_KEYS = ['start.mode', 'start.engine', 'start.clock',
-                   'start.theme', 'start.timer', 'start.bookmarks',
-                   'start.history'];
+                   'start.theme', 'start.timer', 'start.bookmarks'];
   var TOKEN_KEY = 'start.token';
   var TS_KEY = 'start.sync.ts';   /* key -> ms of the value in localStorage */
 
