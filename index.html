@@ -100,6 +100,33 @@
   }
   .search input:focus { border-bottom-color: var(--ink); }
   .search input::placeholder { color: var(--faint); }
+  /* URL-history dropdown: same width as the bar, shown only while the bar
+     has text in url mode. Themed via the same CSS variables as the page. */
+  .url-history {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 8px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .08);
+    z-index: 5;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .url-history[hidden] { display: none; }
+  .url-history-item {
+    padding: 8px 12px;
+    font-size: 14px;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .url-history-item.active { background: var(--line); }
   .links {
     display: flex;
     flex-wrap: wrap;
@@ -254,6 +281,7 @@
     <input id="q" type="search" name="q" placeholder="Abrir URL…"
            autocomplete="off" autofocus spellcheck="false">
     <button type="submit" class="sr-only">Abrir o buscar</button>
+    <div class="url-history" id="urlHistory" role="listbox" aria-label="Historial de URLs" hidden></div>
   </form>
   <nav class="links" aria-label="Favoritos"></nav>
 </main>
@@ -278,6 +306,7 @@
   var cmdIndicator = document.getElementById('cmdIndicator');
   var settingsIcon = document.getElementById('settingsIcon');
   var timerIcon = document.getElementById('timerIcon');
+  var historyMenu = document.getElementById('urlHistory');
 
   var ENGINES = {
     bing:      { action: 'https://cn.bing.com/search',           q: 'q',      ph: 'Buscar en Bing…' },
@@ -336,6 +365,7 @@
      topMode is the selected url/search mode, persisted as start.mode. */
   function setMode(next) {
     mode = next;
+    hideHistoryMenu();
     urlIcon.hidden = next !== 'url';
     searchIcon.hidden = next !== 'search';
     cmdIndicator.hidden = next !== 'command';
@@ -379,8 +409,114 @@
     if (!raw) return;
     var url = normalizeUrl(raw);
     if (!url) return;
-    window.open(url, '_blank', 'noopener');
+    launchUrl(url);
     input.value = '';
+    hideHistoryMenu();
+  }
+
+  /* ---------- url history (dropdown) ---------- */
+  /* The URL opener records the 20 most recent opened URLs as start.history
+     (JSON array of normalized URLs, most recent first, deduped) and syncs
+     them like any other setting. While the bar has text in url mode, a
+     dropdown lists the entries matching the typed letters (case-insensitive
+     substring on the scheme-stripped URL); the first match is highlighted.
+     ArrowUp/Down move the highlight (wrapping), Enter or a click opens the
+     highlighted entry, Escape/blur hides the menu. The menu never appears
+     in the other modes or with an empty bar. */
+  var HISTORY_LIMIT = 20;
+  var history = [];       /* normalized URLs, most recent first */
+  var matches = [];       /* current filtered view for the dropdown */
+  var historyIndex = -1;  /* highlighted match (-1 = none) */
+
+  function loadHistory() {
+    var raw = null;
+    try { raw = localStorage.getItem('start.history'); } catch (e) {}
+    /* First run: no key yet -> empty history. */
+    if (!raw) { history = []; return; }
+    var arr = null;
+    try { arr = JSON.parse(raw); } catch (e) {}
+    /* Corrupt data -> start clean (an EMPTY valid list is a real state). */
+    if (!Array.isArray(arr)) { history = []; return; }
+    history = [];
+    arr.forEach(function (it) {
+      if (typeof it !== 'string' || !it.length) return;
+      /* Re-validate with the same rules as the opener (dangerous schemes
+         dropped, bare domains normalized) and dedupe. */
+      var url = normalizeUrl(it);
+      if (url && url.length <= MAX_BOOKMARK_URL && history.indexOf(url) === -1) {
+        history.push(url);
+      }
+    });
+    if (history.length > HISTORY_LIMIT) { history.length = HISTORY_LIMIT; }
+  }
+  function recordHistory(url) {
+    var idx = history.indexOf(url);
+    if (idx !== -1) { history.splice(idx, 1); }
+    history.unshift(url);
+    if (history.length > HISTORY_LIMIT) { history.length = HISTORY_LIMIT; }
+    save('start.history', JSON.stringify(history));
+  }
+  function launchUrl(url) {
+    window.open(url, '_blank', 'noopener');
+    recordHistory(url);
+  }
+  /* Matching ignores the http(s) scheme on both sides, so typing "git"
+     finds https://github.com and typing "https://git" does too. */
+  function stripScheme(u) { return u.replace(/^https?:\/\//i, ''); }
+  function historyMatches(query) {
+    var q = stripScheme(query.trim()).toLowerCase();
+    if (!q) return [];
+    var out = [];
+    history.forEach(function (u) {
+      if (stripScheme(u).toLowerCase().indexOf(q) !== -1) { out.push(u); }
+    });
+    return out;
+  }
+  function renderHistoryMenu() {
+    historyMenu.textContent = '';
+    matches.forEach(function (url, i) {
+      var el = document.createElement('div');
+      el.className = 'url-history-item' + (i === historyIndex ? ' active' : '');
+      el.setAttribute('role', 'option');
+      if (i === historyIndex) { el.setAttribute('aria-selected', 'true'); }
+      el.textContent = stripScheme(url);
+      /* mousedown (not click): the input must not lose focus first, and
+         preventDefault keeps focus so blur never races the selection */
+      el.addEventListener('mousedown', function (ev) {
+        ev.preventDefault();
+        selectHistory(url);
+      });
+      historyMenu.appendChild(el);
+    });
+  }
+  function moveHistoryIndex(delta) {
+    if (matches.length === 0) return;
+    historyIndex = (historyIndex + delta + matches.length) % matches.length;
+    renderHistoryMenu();
+    var items = historyMenu.children || [];
+    if (items[historyIndex] && items[historyIndex].scrollIntoView) {
+      items[historyIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }
+  function selectHistory(url) {
+    launchUrl(url);
+    input.value = '';
+    hideHistoryMenu();
+  }
+  function hideHistoryMenu() {
+    historyMenu.hidden = true;
+    historyIndex = -1;
+    matches = [];
+  }
+  function updateHistoryMenu() {
+    if (mode !== 'url') { hideHistoryMenu(); return; }
+    var v = input.value;
+    if (!v.trim()) { hideHistoryMenu(); return; }
+    matches = historyMatches(v);
+    if (matches.length === 0) { hideHistoryMenu(); return; }
+    historyIndex = 0;   /* first match highlighted: Enter opens it */
+    historyMenu.hidden = false;
+    renderHistoryMenu();
   }
 
   /* ---------- bookmarks (pinned links 1-9) ---------- */
@@ -880,13 +1016,15 @@
   } catch (e) {}
   try { sessionStorage.removeItem('start.activeMode'); } catch (e) {}
   loadBookmarks();
+  loadHistory();
   renderLinks();
   setMode(restoredSubmode || topMode);
   restoreTimer();   /* a saved timer takes the display slot (after clock restore) */
   /* The sync module (second <script> block) calls this after a pull applied
      server changes while the user was already interacting, so the bookmark
-     nav re-renders live instead of waiting for the next reload. */
-  window.__startOnPull = function () { loadBookmarks(); renderLinks(); };
+     nav re-renders live and an open history dropdown re-filters instead of
+     waiting for the next reload. */
+  window.__startOnPull = function () { loadBookmarks(); renderLinks(); loadHistory(); updateHistoryMenu(); };
 
   /* ---------- sub-mode key handling ---------- */
   /* Any mode: typing "aaa" (or "/" or "-") enters command mode.
@@ -954,7 +1092,8 @@
     var v = input.value;
     var c = v.toLowerCase();   /* commands are case-insensitive */
     if (mode === 'url' || mode === 'search') {
-      if (c === 'aaa' || c === '/' || c === '-') enterCmd();
+      if (c === 'aaa' || c === '/' || c === '-') { enterCmd(); }
+      else if (mode === 'url') { updateHistoryMenu(); }
       return;
     }
     if (mode === 'command') { handleCommandKey(c); return; }
@@ -974,6 +1113,17 @@
      the bar is focused in COMMAND mode (no modifiers, no repeat). In
      url/search/settings the digits type into the bar normally. */
   input.addEventListener('keydown', function (e) {
+    /* url mode with the history dropdown open: arrows move the highlight,
+       Enter opens the highlighted entry, Escape closes the menu. */
+    if (mode === 'url' && !historyMenu.hidden) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveHistoryIndex(1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); moveHistoryIndex(-1); return; }
+      if (e.key === 'Enter') {
+        if (matches[historyIndex]) { e.preventDefault(); selectHistory(matches[historyIndex]); }
+        return;
+      }
+      if (e.key === 'Escape') { e.preventDefault(); hideHistoryMenu(); return; }
+    }
     if (e.key === 'Escape' && (mode === 'command' || mode === 'settings' ||
                                mode === 'links' || mode === 'timer')) {
       e.preventDefault();
@@ -1003,6 +1153,11 @@
     else if (mode === 'command') { e.preventDefault(); exitToTop(); }
     else if (mode === 'timer') { e.preventDefault(); enterCmd(); }
   });
+
+  /* Clicking anywhere else (or tabbing out) closes the dropdown. Item
+     selection uses mousedown + preventDefault, so it keeps the input focus
+     and blur never races the pick. */
+  input.addEventListener('blur', function () { hideHistoryMenu(); });
 
   /* ---------- global shortcuts (bar NOT focused) ---------- */
   /* After clicking a bookmark link or anywhere else, the bar loses focus and
@@ -1089,7 +1244,8 @@
   }
 
   var SYNC_KEYS = ['start.mode', 'start.engine', 'start.clock',
-                   'start.theme', 'start.timer', 'start.bookmarks'];
+                   'start.theme', 'start.timer', 'start.bookmarks',
+                   'start.history'];
   var TOKEN_KEY = 'start.token';
   var TS_KEY = 'start.sync.ts';   /* key -> ms of the value in localStorage */
 

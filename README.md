@@ -29,6 +29,13 @@ Personal browser start page — minimalist, in the same style as the blog.
   (`localhost:3000`, `example.com:8080`) gets `https://` prepended automatically, URLs
   with an allowed scheme (`https://…`, `mailto:…`, `tel:…`) open as-is, and any other
   scheme (`javascript:`, `data:`, …) is rejected.
+- **URL history**: the opener records the 20 most recent URLs (`start.history`) and
+  syncs them like the other settings. While the bar has text in url mode, a dropdown
+  the same width as the bar lists the entries matching what you've typed
+  (case-insensitive substring, scheme ignored — `git` finds `github.com`), most recent
+  first, with the first match highlighted. `↑`/`↓` move the highlight (wrapping),
+  **Enter** (or a click) opens the highlighted entry, `Esc` or clicking away closes the
+  menu, and it never appears with an empty bar or in search mode.
 - **Command mode**: type `aaa` (or `Aaa` / `/` / `-`, case-insensitive) in the bar to
   enter command mode (the indicator swaps to a `❯` on the left; the input stays
   left-aligned). Then (letters are case-insensitive):
@@ -161,8 +168,8 @@ after that the device holds a token and behaves exactly as before.
 - **Timers sync too**: `start.timer` stores absolute end/start timestamps, so a
   countdown started on one device resumes on another with the correct remaining time.
 - **What syncs**: `start.mode`, `start.engine`, `start.clock`, `start.theme`,
-  `start.timer`, `start.bookmarks`. The sync bookkeeping itself lives in
-  `localStorage` under `start.sync.ts` (per-key timestamps) and is never uploaded.
+  `start.timer`, `start.bookmarks`, `start.history`. The sync bookkeeping itself lives
+  in `localStorage` under `start.sync.ts` (per-key timestamps) and is never uploaded.
 - **No visible chrome**: no status indicators were added — the page looks identical.
   Sync failures are silent (console) and self-healing.
 
@@ -190,6 +197,8 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
 - `start.bookmarks` — the bookmark list: a JSON array of `{label, url}` objects,
   edited from settings → links; restored on load; first run defaults to the original
   hardcoded links.
+- `start.history` — the URL-opener history: a JSON array of the 20 most recent
+  normalized URLs (most recent first, deduped); restored on load; first run is empty.
 - `start.token` — the sync session token (set after the one-time password; drives
   the auth overlay and the API calls). It is sent to the API as a bearer token
   and is never included in the synchronized key/value payload.
