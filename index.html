@@ -419,15 +419,17 @@
   /* ---------- url history (dropdown) ---------- */
   /* The URL opener records the 20 most recent opened URLs as start.history
      (JSON array of normalized URLs, most recent first, deduped). The list is
-     DEVICE-LOCAL by design: raw URLs can carry private identifiers/tokens,
-     so they are never sent through the settings sync. While the bar has text
-     in url mode, a dropdown lists the entries matching the typed letters
-     (case-insensitive substring on the scheme-stripped URL); the first match
-     is highlighted. ArrowUp/Down move the highlight (wrapping), Enter or a
-     click opens the highlighted entry, Escape/blur hides the menu. The menu
-     never appears in the other modes or with an empty bar. The input is
-     exposed to assistive tech as a combobox (aria-controls/expanded/
-     activedescendant) linked to the listbox. */
+     synced across devices like bookmarks (last-write-wins per key, debounced
+     push). NOTE: raw URLs can contain private identifiers/tokens, so the
+     synced value lives on the user's own sync server in plaintext — the
+     user explicitly opted into this. While the bar has text in url mode, a
+     dropdown lists the entries matching the typed letters (case-insensitive
+     substring on the scheme-stripped URL); the first match is highlighted.
+     ArrowUp/Down move the highlight (wrapping), Enter or a click opens the
+     highlighted entry, Escape/blur hides the menu. The menu never appears
+     in the other modes or with an empty bar. The input is exposed to
+     assistive tech as a combobox (aria-controls/expanded/activedescendant)
+     linked to the listbox. */
   var HISTORY_LIMIT = 20;
   var history = [];       /* normalized URLs, most recent first */
   var matches = [];       /* current filtered view for the dropdown */
@@ -526,6 +528,10 @@
     if (!v.trim()) { hideHistoryMenu(); return; }
     matches = historyMatches(v);
     if (matches.length === 0) { hideHistoryMenu(); return; }
+    /* The menu only ever shows while the bar is focused. The input handler
+       implies focus, but the pull hook can call this at any time (user
+       clicked away, text still in the bar) — never pop the menu open then. */
+    if (document.activeElement !== input) { hideHistoryMenu(); return; }
     historyIndex = 0;   /* first match highlighted: Enter opens it */
     historyMenu.hidden = false;
     input.setAttribute('aria-expanded', 'true');
@@ -1035,9 +1041,9 @@
   restoreTimer();   /* a saved timer takes the display slot (after clock restore) */
   /* The sync module (second <script> block) calls this after a pull applied
      server changes while the user was already interacting, so the bookmark
-     nav re-renders live instead of waiting for the next reload. (URL history
-     is device-local and never part of a pull.) */
-  window.__startOnPull = function () { loadBookmarks(); renderLinks(); };
+     nav re-renders live and an open history dropdown re-filters instead of
+     waiting for the next reload. */
+  window.__startOnPull = function () { loadBookmarks(); renderLinks(); loadHistory(); updateHistoryMenu(); };
 
   /* ---------- sub-mode key handling ---------- */
   /* Any mode: typing "aaa" (or "/" or "-") enters command mode.
@@ -1257,7 +1263,8 @@
   }
 
   var SYNC_KEYS = ['start.mode', 'start.engine', 'start.clock',
-                   'start.theme', 'start.timer', 'start.bookmarks'];
+                   'start.theme', 'start.timer', 'start.bookmarks',
+                   'start.history'];
   var TOKEN_KEY = 'start.token';
   var TS_KEY = 'start.sync.ts';   /* key -> ms of the value in localStorage */
 
