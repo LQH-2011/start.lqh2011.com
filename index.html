@@ -528,6 +528,10 @@
     if (!v.trim()) { hideHistoryMenu(); return; }
     matches = historyMatches(v);
     if (matches.length === 0) { hideHistoryMenu(); return; }
+    /* The menu only ever shows while the bar is focused. The input handler
+       implies focus, but the pull hook can call this at any time (user
+       clicked away, text still in the bar) — never pop the menu open then. */
+    if (document.activeElement !== input) { hideHistoryMenu(); return; }
     historyIndex = 0;   /* first match highlighted: Enter opens it */
     historyMenu.hidden = false;
     input.setAttribute('aria-expanded', 'true');
