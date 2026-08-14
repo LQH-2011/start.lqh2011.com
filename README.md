@@ -267,8 +267,10 @@ Setup once:
 1. Vercel → project → **Settings → Domains** → Add `preview.lqh2011.com`.
 2. DNS provider: `preview` CNAME → `cname.vercel-dns.com` (same target as
    `start-api`).
-3. Vercel → **Account Settings → Tokens** → Create a token with scope covering
-   the account/team that owns this project.
+3. Vercel → **Account Settings → Tokens** (https://vercel.com/account/tokens)
+   → Create Token → scope **Full Account**. This must be a *classic personal*
+   token: team- or project-scoped tokens have no user identity, and the
+   workflow fails with `Not able to load user ... User not found (404)`.
 4. GitHub → repo → **Settings → Secrets and variables → Actions** → New
    repository secret → name `VERCEL_TOKEN`, paste the token.
 
