@@ -255,6 +255,30 @@ The main site's DNS does **not** move. In your DNS provider's panel add one reco
 Vercel provisions the TLS certificate automatically. The page already targets
 `https://start-api.lqh2011.com`; no frontend change needed.
 
+### 5. Preview alias (preview.lqh2011.com)
+
+PR previews deploy to `*.vercel.app`, which is blocked in China. A GitHub
+Actions workflow (`.github/workflows/vercel-preview-alias.yml`) re-points
+`preview.lqh2011.com` at every successful Vercel preview build, so any PR can
+be previewed from China at https://preview.lqh2011.com.
+
+Setup once:
+
+1. Vercel → project → **Settings → Domains** → Add `preview.lqh2011.com`.
+2. DNS provider: `preview` CNAME → `cname.vercel-dns.com` (same target as
+   `start-api`).
+3. Vercel → **Account Settings → Tokens** → Create a token with scope covering
+   the account/team that owns this project.
+4. GitHub → repo → **Settings → Secrets and variables → Actions** → New
+   repository secret → name `VERCEL_TOKEN`, paste the token.
+
+How it works: GitHub's `deployment_status` event fires when Vercel finishes a
+preview build; the workflow verifies it is the newest successful preview and
+runs `vercel alias <preview-url> preview.lqh2011.com`. The alias is single and
+last-wins — the most recently deployed PR owns it. Production deploys and
+build failures never touch it. Runs fail with a clear message until step 4 is
+done — that's expected, not a bug.
+
 ### Local development
 
 ```sh
