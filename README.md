@@ -245,7 +245,9 @@ Save the password somewhere safe — it's what you'll type on each new device.
    - `DATABASE_URL` — the Neon pooled connection string
    - `AUTH_PASSWORD_HASH` — from `npm run hash` (format `scrypt$<salt>$<hash>`)
    - `AUTH_TOKEN_SECRET` — the random hex
-   - `ALLOWED_ORIGIN` — optional, defaults to `https://start.lqh2011.com`
+   - `ALLOWED_ORIGIN` — optional, comma-separated list of origins allowed to
+     call the API; defaults to `https://start.lqh2011.com`. With the preview
+     alias: `https://start.lqh2011.com,https://preview.lqh2011.com`
 3. Deploy; the API lives at `https://<your-project>.vercel.app/api/…`.
 
 ### 4. DNS (subdomain)
