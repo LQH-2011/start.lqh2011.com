@@ -75,12 +75,20 @@ jobs:
 
           echo "Preview URL: $PREVIEW_URL"
 
+          if [ -z "${VERCEL_TOKEN}" ]; then
+            echo "VERCEL_TOKEN is not set - add it as a repository secret:" >&2
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret" >&2
+            exit 1
+          fi
+
           # Resolve the Vercel scope (team slug, or the token owner's username
           # for personal accounts) via the Vercel API. The deployment URL alone
           # is ambiguous: team slugs are a trailing hyphen-delimited segment of
-          # the hostname and cannot be parsed reliably.
+          # the hostname and cannot be parsed reliably. The API takes the
+          # deployment hostname, not the full https:// URL.
+          PREVIEW_HOST="${PREVIEW_URL#https://}"
           SCOPE="$(curl -fsSL -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-            "https://api.vercel.com/v13/deployments/${PREVIEW_URL}" \
+            "https://api.vercel.com/v13/deployments/${PREVIEW_HOST}" \
             | jq -r '.team.slug // empty')"
           if [ -z "$SCOPE" ]; then
             SCOPE="$(curl -fsSL -H "Authorization: Bearer ${VERCEL_TOKEN}" \
