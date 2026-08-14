@@ -1,0 +1,54 @@
+# Assigns preview.lqh2011.com to the latest successful Vercel preview deployment.
+#
+# Why: Vercel's automatic PR previews live on *.vercel.app, which is not
+# reachable from China. This workflow re-aliases them to a custom domain
+# that is. It runs on GitHub's `deployment_status` event, which Vercel's
+# GitHub integration posts when a deployment finishes.
+
+name: Alias Vercel Preview
+
+on:
+  deployment_status:
+
+jobs:
+  assign-preview-alias:
+    # Only react to successful Vercel *preview* deployments:
+    # - state 'success' (and 'ready', GitHub's newer canonical name)
+    # - created by the Vercel GitHub bot
+    # - environment 'preview' (excludes production deploys to main)
+    if: |
+      (github.event.deployment_status.state == 'success' || github.event.deployment_status.state == 'ready') &&
+      github.event.deployment.creator.login == 'vercel[bot]' &&
+      github.event.deployment.environment == 'preview'
+    runs-on: ubuntu-latest
+    # If several previews finish at the same time, cancel the older run so
+    # preview.lqh2011.com always points to the newest successful preview.
+    concurrency:
+      group: vercel-preview-alias
+      cancel-in-progress: true
+    steps:
+      - name: Assign preview.lqh2011.com to the deployment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
+        run: |
+          set -euo pipefail
+
+          echo "Preview URL: $PREVIEW_URL"
+
+          # Vercel preview URLs look like:
+          #   team account:     https://<project>...<scope>.vercel.app
+          #   personal account: https://<project>...vercel.app
+          # Extract the team scope (if any) so the CLI authenticates against
+          # the account that owns the deployment.
+          SCOPE="$(printf '%s' "$PREVIEW_URL" | sed -nE 's|^https?://[^/]+\.([^./]+)\.vercel\.app/?.*$|\1|p')"
+
+          if [ -n "$SCOPE" ]; then
+            echo "Detected Vercel scope: $SCOPE"
+            npx vercel@latest alias set "$PREVIEW_URL" preview.lqh2011.com \
+              --token "$VERCEL_TOKEN" --scope "$SCOPE" --yes
+          else
+            echo "No team scope in URL - using the token's default account."
+            npx vercel@latest alias set "$PREVIEW_URL" preview.lqh2011.com \
+              --token "$VERCEL_TOKEN" --yes
+          fi
