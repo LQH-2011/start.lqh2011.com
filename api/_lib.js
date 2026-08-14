@@ -16,8 +16,26 @@ var AUTH_WINDOW_MS = 15 * 60 * 1000;
 var AUTH_MAX_ATTEMPTS = 10;
 
 /* ---------- CORS ---------- */
-function allowedOrigin() {
-  return process.env.ALLOWED_ORIGIN || 'https://start.lqh2011.com';
+/* ALLOWED_ORIGIN is a comma-separated list of origins allowed to call the
+   API (default: the production page origin). The response echoes the
+   request's Origin header only when it is on the list — never '*', and never
+   an origin outside the list — so one env var can serve both the production
+   page and preview.lqh2011.com, and the browser's preflight check passes for
+   exactly the allowed origins. */
+function allowedOrigins() {
+  var v = process.env.ALLOWED_ORIGIN;
+  if (!v || !v.trim()) return ['https://start.lqh2011.com'];
+  return v.split(',').map(function (s) { return s.trim(); })
+    .filter(function (s) { return s.length > 0; });
+}
+function corsOrigin(req) {
+  var origin = req.headers && req.headers.origin;
+  if (!origin) return null;
+  var list = allowedOrigins();
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] === origin) return origin;
+  }
+  return null;
 }
 function corsHeaders(origin) {
   return {
@@ -28,15 +46,24 @@ function corsHeaders(origin) {
     'Cache-Control': 'no-store'
   };
 }
-function send(res, status, obj, origin) {
+/* Set CORS headers only when the request origin is allowed; otherwise no
+   ACAO header is set and the browser blocks the call. */
+function applyCors(res, req) {
+  var origin = corsOrigin(req);
+  if (!origin) return false;
   var headers = corsHeaders(origin);
   Object.keys(headers).forEach(function (k) { res.setHeader(k, headers[k]); });
+  return true;
+}
+function send(res, status, obj, req) {
+  applyCors(res, req);
   res.status(status).json(obj);
 }
-/* OPTIONS preflight for cross-origin fetches (page on GH Pages, API on Vercel). */
+/* OPTIONS preflight for cross-origin fetches (page on GH Pages / Vercel
+   preview, API on Vercel). */
 function preflight(req, res) {
   if (req.method !== 'OPTIONS') return false;
-  send(res, 204, {}, allowedOrigin());
+  send(res, 204, {}, req);
   return true;
 }
 
@@ -181,7 +208,6 @@ async function upsertAll(items) {
 }
 
 module.exports = {
-  allowedOrigin: allowedOrigin,
   send: send,
   preflight: preflight,
   verifyPassword: verifyPassword,
