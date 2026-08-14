@@ -241,13 +241,17 @@ Save the password somewhere safe — it's what you'll type on each new device.
 1. Import this repo at https://vercel.com/new (Framework Preset: **Other**).
    Vercel auto-detects the `api/` directory and deploys `POST /api/auth` and
    `GET|POST /api/data` as serverless functions.
-2. Add these Environment Variables to the project (Settings → Environment Variables):
+2. Add these Environment Variables to the project (Settings → Environment Variables).
+   Add each one to **both the Production and Preview environments** — the
+   preview (e.g. `preview.lqh2011.com`) needs the same API env vars, otherwise
+   login fails there:
    - `DATABASE_URL` — the Neon pooled connection string
    - `AUTH_PASSWORD_HASH` — from `npm run hash` (format `scrypt$<salt>$<hash>`)
    - `AUTH_TOKEN_SECRET` — the random hex
    - `ALLOWED_ORIGIN` — optional, comma-separated list of origins allowed to
-     call the API; defaults to `https://start.lqh2011.com`. With the preview
-     alias: `https://start.lqh2011.com,https://preview.lqh2011.com`
+     call the API; defaults to `https://start.lqh2011.com`. Set it in **both**
+     environments and keep the preview alias in the value:
+     `https://start.lqh2011.com,https://preview.lqh2011.com`
 3. Deploy; the API lives at `https://<your-project>.vercel.app/api/…`.
 
 ### 4. DNS (subdomain)
