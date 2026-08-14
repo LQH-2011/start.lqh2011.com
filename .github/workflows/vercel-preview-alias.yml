@@ -105,6 +105,6 @@ jobs:
             exit 1
           fi
           echo "Resolved Vercel scope: $SCOPE"
-
+          # Pin the CLI version - @latest is a mutable tag (supply-chain).
           npx vercel@59.0.0 alias set "$PREVIEW_URL" preview.lqh2011.com \
-            --token "$VERCEL_TOKEN" --scope "$SCOPE" --yes
+            --token "$VERCEL_TOKEN" --scope "$SCOPE"
