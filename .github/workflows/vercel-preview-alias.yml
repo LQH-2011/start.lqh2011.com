@@ -181,16 +181,18 @@ jobs:
           fi
 
           # Upsert: keep ONE comment per PR (marker hidden in the footer).
-          # List ALL pages (--paginate --slurp), keep the NEWEST bot-authored
-          # comment carrying the marker, and delete any duplicates left over
-          # from races or older versions.
+          # List ALL pages (--paginate; jq runs per page, ids collected in
+          # the shell), keep the NEWEST bot-authored comment carrying the
+          # marker, and delete any duplicates left over from races or older
+          # versions. NOTE: gh's --slurp cannot be combined with --jq.
           TMP="$(mktemp)"
           printf '%s' "$BODY" | jq -Rs '{body: .}' > "$TMP"
-          IDS="$(gh api --paginate --slurp \
+          IDS="$(gh api --paginate \
             "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?per_page=100" \
-            --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | contains("preview-alias-status"))) | .id] | sort')"
-          EXISTING_ID="$(printf '%s' "$IDS" | jq -r '.[-1] // empty')"
-          for dup in $(printf '%s' "$IDS" | jq -r '.[:-1][]'); do
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("preview-alias-status"))) | .id' \
+            | sort -n)"
+          EXISTING_ID="$(printf '%s' "$IDS" | tail -1)"
+          for dup in $(printf '%s' "$IDS" | head -n -1); do
             echo "Deleting duplicate status comment ${dup}"
             gh api -X DELETE "repos/${{ github.repository }}/issues/comments/${dup}" >/dev/null
           done
