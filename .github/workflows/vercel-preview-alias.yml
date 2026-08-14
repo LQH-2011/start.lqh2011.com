@@ -181,10 +181,19 @@ jobs:
           fi
 
           # Upsert: keep ONE comment per PR (marker hidden in the footer).
+          # List ALL pages (--paginate --slurp), keep the NEWEST bot-authored
+          # comment carrying the marker, and delete any duplicates left over
+          # from races or older versions.
           TMP="$(mktemp)"
           printf '%s' "$BODY" | jq -Rs '{body: .}' > "$TMP"
-          EXISTING_ID="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?per_page=100" \
-            --jq '[.[] | select(.body | contains("preview-alias-status"))][0].id // empty')"
+          IDS="$(gh api --paginate --slurp \
+            "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?per_page=100" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | contains("preview-alias-status"))) | .id] | sort')"
+          EXISTING_ID="$(printf '%s' "$IDS" | jq -r '.[-1] // empty')"
+          for dup in $(printf '%s' "$IDS" | jq -r '.[:-1][]'); do
+            echo "Deleting duplicate status comment ${dup}"
+            gh api -X DELETE "repos/${{ github.repository }}/issues/comments/${dup}" >/dev/null
+          done
           if [ -n "$EXISTING_ID" ]; then
             echo "Updating existing comment ${EXISTING_ID}"
             gh api -X PATCH "repos/${{ github.repository }}/issues/comments/${EXISTING_ID}" \
