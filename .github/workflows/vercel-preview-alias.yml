@@ -1,4 +1,5 @@
-# Assigns preview.lqh2011.com to the latest successful Vercel preview deployment.
+# Assigns preview.lqh2011.com to the latest successful Vercel preview deployment
+# and posts the result as a comment on the PR (one upserted comment per PR).
 #
 # Why: Vercel's automatic PR previews live on *.vercel.app, which is not
 # reachable from China. This workflow re-aliases them to a custom domain
@@ -11,8 +12,10 @@ on:
   deployment_status:
 
 permissions:
-  # Read deployment records and statuses so we can detect stale events.
+  # Read deployments to detect stale events; write PR comments for the result.
   deployments: read
+  pull-requests: write
+  issues: write
 
 jobs:
   assign-preview-alias:
@@ -71,6 +74,7 @@ jobs:
           echo "Deployment $DEPLOYMENT_ID is the newest successful preview; continuing."
 
       - name: Assign preview.lqh2011.com to the deployment
+        id: assign-alias
         if: steps.skip-stale.outputs.proceed == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -81,8 +85,8 @@ jobs:
           echo "Preview URL: $PREVIEW_URL"
 
           if [ -z "${VERCEL_TOKEN}" ]; then
-            echo "VERCEL_TOKEN is not set - add it as a repository secret:" >&2
-            echo "Settings -> Secrets and variables -> Actions -> New repository secret" >&2
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+            echo "error=VERCEL_TOKEN secret is not set" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
@@ -92,19 +96,103 @@ jobs:
           # the hostname and cannot be parsed reliably. The API takes the
           # deployment hostname, not the full https:// URL.
           PREVIEW_HOST="${PREVIEW_URL#https://}"
-          SCOPE="$(curl -fsSL -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+          if ! SCOPE="$(curl -fsSL -H "Authorization: Bearer ${VERCEL_TOKEN}" \
             "https://api.vercel.com/v13/deployments/${PREVIEW_HOST}" \
-            | jq -r '.team.slug // empty')"
-          if [ -z "$SCOPE" ]; then
-            SCOPE="$(curl -fsSL -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-              "https://api.vercel.com/v2/user" \
-              | jq -r '.user.username // empty')"
+            | jq -r '.team.slug // empty')"; then
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+            echo "error=scope resolution failed - check the VERCEL_TOKEN" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
           if [ -z "$SCOPE" ]; then
-            echo "Could not resolve the Vercel scope for ${PREVIEW_URL}" >&2
+            if ! SCOPE="$(curl -fsSL -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v2/user" \
+              | jq -r '.user.username // empty')"; then
+              echo "status=failure" >> "$GITHUB_OUTPUT"
+              echo "error=scope resolution failed - check the VERCEL_TOKEN" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+          fi
+          if [ -z "$SCOPE" ]; then
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+            echo "error=could not resolve the Vercel scope" >> "$GITHUB_OUTPUT"
             exit 1
           fi
           echo "Resolved Vercel scope: $SCOPE"
+
           # Pin the CLI version - @latest is a mutable tag (supply-chain).
-          npx vercel@59.0.0 alias set "$PREVIEW_URL" preview.lqh2011.com \
-            --token "$VERCEL_TOKEN" --scope "$SCOPE"
+          if OUT="$(npx vercel@59.0.0 alias set "$PREVIEW_URL" preview.lqh2011.com \
+            --token "$VERCEL_TOKEN" --scope "$SCOPE" 2>&1)"; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+            echo "alias=preview.lqh2011.com" >> "$GITHUB_OUTPUT"
+            echo "Preview aliased to preview.lqh2011.com"
+          else
+            RC=$?
+            ERR="$(printf '%s' "$OUT" | grep -iE 'error' | tail -1)"
+            [ -z "$ERR" ] && ERR="$(printf '%s' "$OUT" | tail -1)"
+            [ -z "$ERR" ] && ERR="vercel alias failed with exit code ${RC}"
+            ERR="$(printf '%s' "$ERR" | sed 's/%/%25/g; s/\r//g')"
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+            echo "error=${ERR}" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Post alias status comment on the PR
+        if: always() && steps.skip-stale.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.deployment.sha }}
+          STATUS: ${{ steps.assign-alias.outputs.status }}
+          ERROR: ${{ steps.assign-alias.outputs.error }}
+          PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
+        run: |
+          set -euo pipefail
+
+          # deployment_status carries no PR context: resolve it from the
+          # deployment commit (Vercel sets deployment.ref == deployment.sha).
+          PR_NUMBER="$(gh api "repos/${{ github.repository }}/commits/${SHA}/pulls" \
+            --jq '([.[] | select(.head.sha == "'"$SHA"'")][0] // .[0]).number // empty')"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR found for commit ${SHA}; not posting a comment."
+            exit 0
+          fi
+          echo "PR #${PR_NUMBER} found for commit ${SHA}"
+
+          if [ "$STATUS" = "success" ]; then
+            BODY="$(printf '%s\n' \
+              "## 🚀 Preview aliased" \
+              "" \
+              "[**preview.lqh2011.com**](https://preview.lqh2011.com) now points to this PR's latest preview - no more blocked *.vercel.app URLs from China." \
+              "" \
+              "- 📦 **Deployment:** [$PREVIEW_URL]($PREVIEW_URL)" \
+              "- 🕒 **Updated:** $(date -u '+%Y-%m-%d %H:%M UTC')" \
+              "" \
+              '<sub>🤖 posted by the *Alias Vercel Preview* workflow · <!-- preview-alias-status --></sub>')"
+          else
+            BODY="$(printf '%s\n' \
+              "## ⚠️ Preview alias failed" \
+              "" \
+              "[**preview.lqh2011.com**](https://preview.lqh2011.com) could not be updated for this preview." \
+              "" \
+              "- 📦 **Deployment:** [$PREVIEW_URL]($PREVIEW_URL)" \
+              "- ❌ **Error:** \`${ERROR:-unknown error}\`" \
+              "- 🛠️ **Fix:** check that the \`VERCEL_TOKEN\` secret is a classic Full Account token and that \`preview.lqh2011.com\` is added in Vercel → Settings → Domains (README → Deploy → 5)." \
+              "" \
+              '<sub>🤖 posted by the *Alias Vercel Preview* workflow · <!-- preview-alias-status --></sub>')"
+          fi
+
+          # Upsert: keep ONE comment per PR (marker hidden in the footer).
+          TMP="$(mktemp)"
+          printf '%s' "$BODY" | jq -Rs '{body: .}' > "$TMP"
+          EXISTING_ID="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?per_page=100" \
+            --jq '[.[] | select(.body | contains("preview-alias-status"))][0].id // empty')"
+          if [ -n "$EXISTING_ID" ]; then
+            echo "Updating existing comment ${EXISTING_ID}"
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/${EXISTING_ID}" \
+              --input "$TMP" >/dev/null
+          else
+            echo "Posting new comment on PR #${PR_NUMBER}"
+            gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+              --input "$TMP" >/dev/null
+          fi
+          rm -f "$TMP"
+          echo "Status comment: https://github.com/${{ github.repository }}/pull/${PR_NUMBER}"
