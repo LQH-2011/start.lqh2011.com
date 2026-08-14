@@ -10,23 +10,62 @@ name: Alias Vercel Preview
 on:
   deployment_status:
 
+permissions:
+  # Read deployment records and statuses so we can detect stale events.
+  deployments: read
+
 jobs:
   assign-preview-alias:
     # Only react to successful Vercel *preview* deployments:
     # - state 'success' (and 'ready', GitHub's newer canonical name)
     # - created by the Vercel GitHub bot
-    # - environment 'preview' (excludes production deploys to main)
+    # - environment 'preview' (GitHub Actions `==` is case-insensitive, so
+    #   this also matches Vercel's "Preview" environment)
     if: |
       (github.event.deployment_status.state == 'success' || github.event.deployment_status.state == 'ready') &&
       github.event.deployment.creator.login == 'vercel[bot]' &&
       github.event.deployment.environment == 'preview'
     runs-on: ubuntu-latest
-    # If several previews finish at the same time, cancel the older run so
-    # preview.lqh2011.com always points to the newest successful preview.
+    # If several previews finish at the same time, cancel the older run.
+    # This alone does not guarantee ordering, so the first step below also
+    # verifies this run is for the newest successful preview deployment.
     concurrency:
       group: vercel-preview-alias
       cancel-in-progress: true
     steps:
+      - name: Skip stale deployment events
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYMENT_ID: ${{ github.event.deployment.id }}
+        run: |
+          set -euo pipefail
+
+          # Deployment status events can arrive out of order, so a run for an
+          # older deployment could otherwise overwrite the alias after a newer
+          # one was applied. Find the newest Vercel preview deployment whose
+          # latest status is success; if it is not the one that triggered this
+          # run, skip. (jq comparisons are case-sensitive, so normalize the
+          # environment - Vercel reports it as "Preview".)
+          PREVIEWS="$(gh api "repos/${{ github.repository }}/deployments?per_page=100" \
+            --jq '[.[] | select((.environment | ascii_downcase) == "preview" and .creator.login == "vercel[bot]")]')"
+
+          NEWEST_ID=""
+          for row in $(printf '%s' "$PREVIEWS" | jq -r '.[] | @base64'); do
+            dep="$(printf '%s' "$row" | base64 -d)"
+            id="$(printf '%s' "$dep" | jq -r '.id')"
+            state="$(gh api "$(printf '%s' "$dep" | jq -r '.statuses_url')" --jq '.[0].state')"
+            if [ "$state" = "success" ] || [ "$state" = "ready" ]; then
+              NEWEST_ID="$id"
+              break
+            fi
+          done
+
+          if [ -z "$NEWEST_ID" ] || [ "$NEWEST_ID" != "$DEPLOYMENT_ID" ]; then
+            echo "Skipping: deployment $DEPLOYMENT_ID is not the newest successful preview (newest: ${NEWEST_ID:-none})"
+            exit 0
+          fi
+          echo "Deployment $DEPLOYMENT_ID is the newest successful preview; continuing."
+
       - name: Assign preview.lqh2011.com to the deployment
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -36,19 +75,23 @@ jobs:
 
           echo "Preview URL: $PREVIEW_URL"
 
-          # Vercel preview URLs look like:
-          #   team account:     https://<project>...<scope>.vercel.app
-          #   personal account: https://<project>...vercel.app
-          # Extract the team scope (if any) so the CLI authenticates against
-          # the account that owns the deployment.
-          SCOPE="$(printf '%s' "$PREVIEW_URL" | sed -nE 's|^https?://[^/]+\.([^./]+)\.vercel\.app/?.*$|\1|p')"
-
-          if [ -n "$SCOPE" ]; then
-            echo "Detected Vercel scope: $SCOPE"
-            npx vercel@latest alias set "$PREVIEW_URL" preview.lqh2011.com \
-              --token "$VERCEL_TOKEN" --scope "$SCOPE" --yes
-          else
-            echo "No team scope in URL - using the token's default account."
-            npx vercel@latest alias set "$PREVIEW_URL" preview.lqh2011.com \
-              --token "$VERCEL_TOKEN" --yes
+          # Resolve the Vercel scope (team slug, or the token owner's username
+          # for personal accounts) via the Vercel API. The deployment URL alone
+          # is ambiguous: team slugs are a trailing hyphen-delimited segment of
+          # the hostname and cannot be parsed reliably.
+          SCOPE="$(curl -fsSL -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v13/deployments/${PREVIEW_URL}" \
+            | jq -r '.team.slug // empty')"
+          if [ -z "$SCOPE" ]; then
+            SCOPE="$(curl -fsSL -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v2/user" \
+              | jq -r '.user.username // empty')"
           fi
+          if [ -z "$SCOPE" ]; then
+            echo "Could not resolve the Vercel scope for ${PREVIEW_URL}" >&2
+            exit 1
+          fi
+          echo "Resolved Vercel scope: $SCOPE"
+
+          npx vercel@latest alias set "$PREVIEW_URL" preview.lqh2011.com \
+            --token "$VERCEL_TOKEN" --scope "$SCOPE" --yes
