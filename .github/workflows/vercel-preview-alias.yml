@@ -34,6 +34,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Skip stale deployment events
+        id: skip-stale
         env:
           GH_TOKEN: ${{ github.token }}
           DEPLOYMENT_ID: ${{ github.event.deployment.id }}
@@ -44,8 +45,9 @@ jobs:
           # older deployment could otherwise overwrite the alias after a newer
           # one was applied. Find the newest Vercel preview deployment whose
           # latest status is success; if it is not the one that triggered this
-          # run, skip. (jq comparisons are case-sensitive, so normalize the
-          # environment - Vercel reports it as "Preview".)
+          # run, signal the alias step to skip. (jq comparisons are
+          # case-sensitive, so normalize the environment - Vercel reports it
+          # as "Preview".)
           PREVIEWS="$(gh api "repos/${{ github.repository }}/deployments?per_page=100" \
             --jq '[.[] | select((.environment | ascii_downcase) == "preview" and .creator.login == "vercel[bot]")]')"
 
@@ -62,11 +64,14 @@ jobs:
 
           if [ -z "$NEWEST_ID" ] || [ "$NEWEST_ID" != "$DEPLOYMENT_ID" ]; then
             echo "Skipping: deployment $DEPLOYMENT_ID is not the newest successful preview (newest: ${NEWEST_ID:-none})"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
           echo "Deployment $DEPLOYMENT_ID is the newest successful preview; continuing."
 
       - name: Assign preview.lqh2011.com to the deployment
+        if: steps.skip-stale.outputs.proceed == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
@@ -101,5 +106,5 @@ jobs:
           fi
           echo "Resolved Vercel scope: $SCOPE"
 
-          npx vercel@latest alias set "$PREVIEW_URL" preview.lqh2011.com \
+          npx vercel@59.0.0 alias set "$PREVIEW_URL" preview.lqh2011.com \
             --token "$VERCEL_TOKEN" --scope "$SCOPE" --yes
