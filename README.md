@@ -292,7 +292,9 @@ runs `vercel alias <preview-url> preview.lqh2011.com`. The alias is single and
 last-wins — the most recently deployed PR owns it. Production deploys and
 build failures never touch it. Runs fail with a clear message until step 4 is
 done — that's expected, not a bug. The workflow also posts (and keeps
-updating) one comment per PR showing whether the aliasing succeeded.
+updating) one comment per PR showing whether the aliasing succeeded —
+including when a PR is opened after its preview was already built (the
+comment is backfilled on PR open).
 
 ### Local development
 
