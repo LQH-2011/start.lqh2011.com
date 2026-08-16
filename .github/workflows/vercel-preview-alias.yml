@@ -17,9 +17,10 @@ on:
     types: [opened, reopened]
 
 permissions:
-  # Read deployments to detect stale events; write PR comments for the result.
+  # Read deployments to detect stale events and resolve the PR from a commit;
+  # PR comments are posted via the issues comments API (issues: write).
   deployments: read
-  pull-requests: write
+  pull-requests: read
   issues: write
   contents: read   # for actions/checkout (comment script lives in the repo)
 
@@ -167,6 +168,12 @@ jobs:
           bash scripts/preview-status-comment.sh "$PR_NUMBER" "$STATUS" "$ERROR" "$PREVIEW_URL"
 
   backfill-comment-on-pr-open:
+    # Serialize with assign-preview-alias (same group) so the backfill can
+    # never race the alias run's comment upsert, but never cancel an active
+    # alias assignment - the backfill just waits for it to finish.
+    concurrency:
+      group: vercel-preview-alias
+      cancel-in-progress: false
     # PR opened after its head commit was already deployed: the deployment
     # status run aliased + could not comment (no PR existed then), and no new
     # deployment_status event fires on PR open. Post the status comment now,
@@ -177,7 +184,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       deployments: read
-      pull-requests: write
+      pull-requests: read
       issues: write
       contents: read
     steps:
@@ -189,17 +196,32 @@ jobs:
         run: |
           set -euo pipefail
 
-          DEP="$(gh api "repos/${{ github.repository }}/deployments?sha=${HEAD_SHA}&per_page=100" \
-            --jq '[.[] | select((.environment | ascii_downcase) == "preview" and .creator.login == "vercel[bot]")][0] // empty')"
-          if [ -z "$DEP" ]; then
+          # The deployments list is newest-first, but the newest deployment for
+          # a commit may be a failed/queued retry while an OLDER one is ready.
+          # Select the first deployment (newest-first) whose LATEST status is
+          # success or ready - same pattern as the stale-guard step above.
+          PREVIEWS="$(gh api "repos/${{ github.repository }}/deployments?sha=${HEAD_SHA}&per_page=100" \
+            --jq '[.[] | select((.environment | ascii_downcase) == "preview" and .creator.login == "vercel[bot]")]')"
+          if [ -z "$PREVIEWS" ] || [ "$(printf '%s' "$PREVIEWS" | jq 'length')" = "0" ]; then
             echo "No preview deployment yet for ${HEAD_SHA}; the deployment_status event will comment when the build finishes."
             exit 0
           fi
-          STATE="$(gh api "$(printf '%s' "$DEP" | jq -r '.statuses_url')" --jq '.[0].state')"
-          if [ "$STATE" != "success" ] && [ "$STATE" != "ready" ]; then
-            echo "Preview for ${HEAD_SHA} is not ready yet (state=${STATE}); skipping."
+
+          DEP=""
+          PREVIEW_URL=""
+          for row in $(printf '%s' "$PREVIEWS" | jq -r '.[] | @base64'); do
+            dep="$(printf '%s' "$row" | base64 -d)"
+            state="$(gh api "$(printf '%s' "$dep" | jq -r '.statuses_url')" --jq '.[0].state')"
+            if [ "$state" = "success" ] || [ "$state" = "ready" ]; then
+              DEP="$dep"
+              PREVIEW_URL="$(gh api "$(printf '%s' "$dep" | jq -r '.statuses_url')" --jq '.[0].target_url')"
+              break
+            fi
+          done
+
+          if [ -z "$DEP" ]; then
+            echo "No ready preview for ${HEAD_SHA} yet; skipping backfill."
             exit 0
           fi
-          PREVIEW_URL="$(gh api "$(printf '%s' "$DEP" | jq -r '.statuses_url')" --jq '.[0].target_url')"
-          echo "Newest preview for ${HEAD_SHA}: ${PREVIEW_URL}"
+          echo "Newest ready preview for ${HEAD_SHA}: ${PREVIEW_URL}"
           bash scripts/preview-status-comment.sh "${{ github.event.pull_request.number }}" success "" "$PREVIEW_URL"
