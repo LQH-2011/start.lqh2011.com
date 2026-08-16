@@ -47,6 +47,9 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `c` — toggle the "LQH-2011" logo and a live HH:MM:SS block-art clock (stays in
     command mode)
   - `k` — toggle light/dark theme (stays in command mode)
+  - `p` — **Pull**: fetch the latest synced settings from the DB and apply
+    them live — bookmarks, history, theme, engine, clock and timer change
+    in place, no page reload (stays in command mode)
   - `r` — refresh the page (stays in command mode)
   - `s` — **Settings**: open the settings mode (gear indicator); typing `/` or
     `-` again in command mode does the same
@@ -163,7 +166,10 @@ after that the device holds a token and behaves exactly as before.
   epoch-ms timestamp; a newer local value is never clobbered, and an older server
   value never overwrites a newer one). If anything changed the page reloads once so
   the restored state matches your other devices (unless you're already typing — then
-  it applies on the next load).
+  it applies on the next load). While the page is open, `p` in command mode runs the
+  same pull **without reloading**: the merged state (bookmarks, history, theme,
+  engine, top mode, clock, timer) is applied live, so changes made on another device
+  show up immediately.
 - **Push on change**: every existing `save()` (mode, engine, theme, clock, timer —
   including stopping a timer, which syncs as a deletion) schedules a debounced POST
   to the API. Offline? The change stays local and is retried on the next change or
