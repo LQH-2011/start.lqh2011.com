@@ -293,15 +293,17 @@ Setup once:
 4. GitHub → repo → **Settings → Secrets and variables → Actions** → New
    repository secret → name `VERCEL_TOKEN`, paste the token.
 
-How it works: GitHub's `deployment_status` event fires when Vercel finishes a
-preview build; the workflow verifies it is the newest successful preview and
-runs `vercel alias <preview-url> preview.lqh2011.com`. The alias is single and
-last-wins — the most recently deployed PR owns it. Production deploys and
-build failures never touch it. Runs fail with a clear message until step 4 is
-done — that's expected, not a bug. The workflow also posts (and keeps
-updating) one comment per PR showing whether the aliasing succeeded —
+How it works: the workflow triggers on PR events (`opened`, `synchronize`,
+`reopened`) — one run per push, never on production deploys — and polls
+GitHub's deployments API until the Vercel preview build for that PR's head
+commit is ready, then runs `vercel alias <preview-url> preview.lqh2011.com`.
+The alias is single and last-wins — the most recently deployed PR owns it.
+Runs queue in one concurrency group (they are never cancelled), so the newest
+PR event always aliases last. Build failures and wait timeouts exit cleanly
+(no red X on the PR) and the next push retries. The workflow also posts (and
+keeps updating) one comment per PR showing whether the aliasing succeeded —
 including when a PR is opened after its preview was already built (the
-comment is backfilled on PR open).
+`opened` event finds the ready build immediately).
 
 ### Local development
 

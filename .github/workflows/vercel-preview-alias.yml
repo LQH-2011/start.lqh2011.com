@@ -1,25 +1,38 @@
-# Assigns preview.lqh2011.com to the latest successful Vercel preview deployment
-# and posts the result as a comment on the PR (one upserted comment per PR).
+# Assigns preview.lqh2011.com to the latest successful Vercel preview build.
 #
 # Why: Vercel's automatic PR previews live on *.vercel.app, which is not
 # reachable from China. This workflow re-aliases them to a custom domain
-# that is. It runs on GitHub's `deployment_status` event, which Vercel's
-# GitHub integration posts when a deployment finishes.
+# that is.
+#
+# Design (one run per PR event, never per deployment status):
+#   - Triggered by pull_request events (opened/synchronize/reopened), so
+#     production deploys and GH Pages deploys on main never create runs —
+#     the old `deployment_status` trigger produced a skipped run for every
+#     status event in the repo (queued/building/ready x Vercel + GH Pages),
+#     which flooded the Actions list with ~5 no-op runs per push to main.
+#   - Polls the GitHub deployments API until the Vercel *preview* build for
+#     this PR's head commit is ready, then aliases. The `opened` event finds
+#     an already-built preview immediately, which replaces the old
+#     backfill-comment job.
+#   - Runs queue in a single concurrency group (no cancel-in-progress), so
+#     no run is ever cancelled: the newest PR event always aliases last and
+#     preview.lqh2011.com stays on the most recent ready preview.
+#   - Build failures and wait timeouts exit cleanly (exit 0, no red X on the
+#     PR); the next push retries.
+#
+# Deployment protection is intentional: preview.lqh2011.com is NOT public
+# (Vercel account setting) — do not add bypass logic here.
 
 name: Alias Vercel Preview
 
 on:
-  deployment_status:
-  # Backfill: when a PR opens whose head commit was ALREADY deployed (branch
-  # pushed before the PR existed), no deployment_status event fires after the
-  # PR exists, so the main job would never comment until the next push.
   pull_request:
-    types: [opened, reopened]
+    types: [opened, synchronize, reopened]
 
 permissions:
-  # Read deployments to detect stale events and resolve the PR from a commit;
-  # PR comments are posted via the issues comments API. NOTE: the GITHUB_TOKEN
-  # needs pull-requests: write here even though the REST docs say issues: write
+  # Read deployments to poll for the Vercel preview build; PR comments are
+  # posted via the issues comments API. NOTE: the GITHUB_TOKEN needs
+  # pull-requests: write here even though the REST docs say issues: write
   # alone suffices — empirically (verified 2026-08-16) creating a NEW comment
   # on a PULL REQUEST 403s with "Resource not accessible by integration" when
   # pull-requests is read-only, while updating an existing comment still works.
@@ -31,69 +44,81 @@ permissions:
   contents: read   # for actions/checkout (comment script lives in the repo)
 
 jobs:
-  assign-preview-alias:
-    # Only react to successful Vercel *preview* deployments:
-    # - state 'success' (and 'ready', GitHub's newer canonical name)
-    # - created by the Vercel GitHub bot
-    # - environment 'preview' (GitHub Actions `==` is case-insensitive, so
-    #   this also matches Vercel's "Preview" environment)
-    # (this job is skipped for pull_request events: deployment_status is null)
-    if: |
-      (github.event.deployment_status.state == 'success' || github.event.deployment_status.state == 'ready') &&
-      github.event.deployment.creator.login == 'vercel[bot]' &&
-      github.event.deployment.environment == 'preview'
-    runs-on: ubuntu-latest
-    # If several previews finish at the same time, cancel the older run.
-    # This alone does not guarantee ordering, so the first step below also
-    # verifies this run is for the newest successful preview deployment.
+  alias-preview:
+    # Queue (never cancel): a newer PR event waits for the older run, then
+    # aliases last — so preview.lqh2011.com always ends on the newest ready
+    # preview and no run is omitted from the Actions list.
     concurrency:
       group: vercel-preview-alias
-      cancel-in-progress: true
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Skip stale deployment events
-        id: skip-stale
+
+      # Poll until the Vercel preview build for THIS head commit is ready.
+      # Vercel's build takes ~30-60s after a push; the PR event fires before
+      # the deployment exists, so this loop waits for it.
+      - name: Wait for the Vercel preview build
+        id: wait-preview
         env:
           GH_TOKEN: ${{ github.token }}
-          DEPLOYMENT_ID: ${{ github.event.deployment.id }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-
-          # Deployment status events can arrive out of order, so a run for an
-          # older deployment could otherwise overwrite the alias after a newer
-          # one was applied. Find the newest Vercel preview deployment whose
-          # latest status is success; if it is not the one that triggered this
-          # run, signal the alias step to skip. (jq comparisons are
-          # case-sensitive, so normalize the environment - Vercel reports it
-          # as "Preview".)
-          PREVIEWS="$(gh api "repos/${{ github.repository }}/deployments?per_page=100" \
-            --jq '[.[] | select((.environment | ascii_downcase) == "preview" and .creator.login == "vercel[bot]")]')"
-
-          NEWEST_ID=""
-          for row in $(printf '%s' "$PREVIEWS" | jq -r '.[] | @base64'); do
-            dep="$(printf '%s' "$row" | base64 -d)"
-            id="$(printf '%s' "$dep" | jq -r '.id')"
-            state="$(gh api "$(printf '%s' "$dep" | jq -r '.statuses_url')" --jq '.[0].state')"
-            if [ "$state" = "success" ] || [ "$state" = "ready" ]; then
-              NEWEST_ID="$id"
-              break
+          REPO="${{ github.repository }}"
+          MAX_ATTEMPTS=25   # 25 x ~12s ≈ 5 min of waiting for the build
+          PREVIEW_URL=""
+          attempt=0
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+            saw_pending=0
+            saw_error=0
+            # Newest-first list of Vercel preview deployments for this SHA.
+            DEPLOYMENTS="$(gh api "repos/${REPO}/deployments?sha=${HEAD_SHA}&per_page=100" \
+              --jq '[.[] | select((.environment | ascii_downcase) == "preview" and .creator.login == "vercel[bot]")]')"
+            if [ "$(printf '%s' "$DEPLOYMENTS" | jq 'length')" -gt 0 ]; then
+              for row in $(printf '%s' "$DEPLOYMENTS" | jq -r '.[] | @base64'); do
+                dep="$(printf '%s' "$row" | base64 -d)"
+                id="$(printf '%s' "$dep" | jq -r '.id')"
+                state="$(gh api "$(printf '%s' "$dep" | jq -r '.statuses_url')" --jq '.[0].state')"
+                if [ "$state" = "ready" ] || [ "$state" = "success" ]; then
+                  PREVIEW_URL="$(gh api "$(printf '%s' "$dep" | jq -r '.statuses_url')" --jq '.[0].target_url')"
+                  echo "Vercel preview ready (deployment ${id}): ${PREVIEW_URL}"
+                  break 2
+                elif [ "$state" = "error" ] || [ "$state" = "failure" ]; then
+                  echo "Deployment ${id} failed (state=${state}); checking older deployments for the same SHA"
+                  saw_error=1
+                else
+                  echo "Deployment ${id} still ${state}"
+                  saw_pending=1
+                fi
+              done
+            else
+              echo "No Vercel preview deployment yet for ${HEAD_SHA}"
             fi
+            if [ "$saw_error" = 1 ] && [ "$saw_pending" = 0 ]; then
+              echo "The Vercel preview build failed; nothing to alias."
+              exit 0
+            fi
+            echo "Waiting for the Vercel preview build (attempt ${attempt}/${MAX_ATTEMPTS})..."
+            sleep 12
           done
 
-          if [ -z "$NEWEST_ID" ] || [ "$NEWEST_ID" != "$DEPLOYMENT_ID" ]; then
-            echo "Skipping: deployment $DEPLOYMENT_ID is not the newest successful preview (newest: ${NEWEST_ID:-none})"
-            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$PREVIEW_URL" ]; then
+            echo "Timed out waiting for the Vercel preview build (${MAX_ATTEMPTS} attempts)."
+            echo "The next push to this PR will retry the alias."
             exit 0
           fi
-          echo "proceed=true" >> "$GITHUB_OUTPUT"
-          echo "Deployment $DEPLOYMENT_ID is the newest successful preview; continuing."
+          echo "PREVIEW_URL=${PREVIEW_URL}" >> "$GITHUB_OUTPUT"
+          echo "SHA=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Assign preview.lqh2011.com to the deployment
         id: assign-alias
-        if: steps.skip-stale.outputs.proceed == 'true'
+        if: steps.wait-preview.outputs.PREVIEW_URL != ''
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
+          PREVIEW_URL: ${{ steps.wait-preview.outputs.PREVIEW_URL }}
         run: |
           set -euo pipefail
 
@@ -111,7 +136,7 @@ jobs:
           # the hostname and cannot be parsed reliably. The API takes the
           # deployment hostname, not the full https:// URL.
           PREVIEW_HOST="${PREVIEW_URL#https://}"
-          if ! SCOPE="$(curl -fsSL -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+          if ! SCOPE="$(curl -fsSL -H "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v13/deployments/${PREVIEW_HOST}" \
             | jq -r '.team.slug // empty')"; then
             echo "status=failure" >> "$GITHUB_OUTPUT"
@@ -119,7 +144,7 @@ jobs:
             exit 1
           fi
           if [ -z "$SCOPE" ]; then
-            if ! SCOPE="$(curl -fsSL -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            if ! SCOPE="$(curl -fsSL -H "Authorization: Bearer $VERCEL_TOKEN" \
               "https://api.vercel.com/v2/user" \
               | jq -r '.user.username // empty')"; then
               echo "status=failure" >> "$GITHUB_OUTPUT"
@@ -152,82 +177,15 @@ jobs:
           fi
 
       - name: Post alias status comment on the PR
-        if: always() && steps.skip-stale.outputs.proceed == 'true'
+        if: always() && steps.wait-preview.outputs.PREVIEW_URL != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.deployment.sha }}
+          SHA: ${{ github.event.pull_request.head.sha }}
           STATUS: ${{ steps.assign-alias.outputs.status }}
           ERROR: ${{ steps.assign-alias.outputs.error }}
-          PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
+          PREVIEW_URL: ${{ steps.wait-preview.outputs.PREVIEW_URL }}
         run: |
           set -euo pipefail
-
-          # deployment_status carries no PR context: resolve it from the
-          # deployment commit (Vercel sets deployment.ref == deployment.sha).
-          PR_NUMBER="$(gh api "repos/${{ github.repository }}/commits/${SHA}/pulls" \
-            --jq '([.[] | select(.head.sha == "'"$SHA"'")][0] // .[0]).number // empty')"
-          if [ -z "$PR_NUMBER" ]; then
-            echo "No PR found for commit ${SHA}; not posting a comment."
-            exit 0
-          fi
-          echo "PR #${PR_NUMBER} found for commit ${SHA}"
-          bash scripts/preview-status-comment.sh "$PR_NUMBER" "$STATUS" "$ERROR" "$PREVIEW_URL"
-
-  backfill-comment-on-pr-open:
-    # Serialize with assign-preview-alias (same group) so the backfill can
-    # never race the alias run's comment upsert, but never cancel an active
-    # alias assignment - the backfill just waits for it to finish.
-    concurrency:
-      group: vercel-preview-alias
-      cancel-in-progress: false
-    # PR opened after its head commit was already deployed: the deployment
-    # status run aliased + could not comment (no PR existed then), and no new
-    # deployment_status event fires on PR open. Post the status comment now,
-    # from the newest ready preview deployment of the head commit. If the
-    # alias failed on that first run, the failed check is the source of
-    # truth; the next deploy updates this comment.
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      deployments: read
-      pull-requests: write
-      issues: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - name: Post status comment if a preview already exists
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-
-          # The deployments list is newest-first, but the newest deployment for
-          # a commit may be a failed/queued retry while an OLDER one is ready.
-          # Select the first deployment (newest-first) whose LATEST status is
-          # success or ready - same pattern as the stale-guard step above.
-          PREVIEWS="$(gh api "repos/${{ github.repository }}/deployments?sha=${HEAD_SHA}&per_page=100" \
-            --jq '[.[] | select((.environment | ascii_downcase) == "preview" and .creator.login == "vercel[bot]")]')"
-          if [ -z "$PREVIEWS" ] || [ "$(printf '%s' "$PREVIEWS" | jq 'length')" = "0" ]; then
-            echo "No preview deployment yet for ${HEAD_SHA}; the deployment_status event will comment when the build finishes."
-            exit 0
-          fi
-
-          DEP=""
-          PREVIEW_URL=""
-          for row in $(printf '%s' "$PREVIEWS" | jq -r '.[] | @base64'); do
-            dep="$(printf '%s' "$row" | base64 -d)"
-            state="$(gh api "$(printf '%s' "$dep" | jq -r '.statuses_url')" --jq '.[0].state')"
-            if [ "$state" = "success" ] || [ "$state" = "ready" ]; then
-              DEP="$dep"
-              PREVIEW_URL="$(gh api "$(printf '%s' "$dep" | jq -r '.statuses_url')" --jq '.[0].target_url')"
-              break
-            fi
-          done
-
-          if [ -z "$DEP" ]; then
-            echo "No ready preview for ${HEAD_SHA} yet; skipping backfill."
-            exit 0
-          fi
-          echo "Newest ready preview for ${HEAD_SHA}: ${PREVIEW_URL}"
-          bash scripts/preview-status-comment.sh "${{ github.event.pull_request.number }}" success "" "$PREVIEW_URL"
+          bash scripts/preview-status-comment.sh \
+            "${{ github.event.pull_request.number }}" \
+            "${STATUS}" "${ERROR}" "${PREVIEW_URL}"
