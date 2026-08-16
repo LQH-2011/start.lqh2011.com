@@ -20,10 +20,13 @@ Personal browser start page — minimalist, in the same style as the blog.
 
 ## Features
 
-- **Dark mode**: type `aaa` then `k` in the search bar to toggle light/dark. There is no
-  visual switcher and no OS `prefers-color-scheme` detection; the choice is saved in
-  `localStorage` (`start.theme`) and restored on the next load. The block logo and its
-  shadow adapt via CSS variables.
+- **Dark mode**: the page follows your system theme (`prefers-color-scheme`) by
+  default, live — switch the OS theme and it follows without a reload. Type `aaa`
+  then `k` in the search bar to pin an explicit light/dark choice (`k` flips to the
+  opposite of what's currently shown); the choice is saved in `localStorage`
+  (`start.theme`) and restored on the next load. The choice is **device-specific**:
+  it stays in that device's `localStorage` and never syncs to your other devices.
+  The block logo and its shadow adapt via CSS variables.
 - **URL opener (default)**: the bar starts in URL mode (globe indicator). Type a URL and
   press Enter to open it in a new tab — a bare domain (`example.com`) or a host:port
   (`localhost:3000`, `example.com:8080`) gets `https://` prepended automatically, URLs
@@ -48,7 +51,7 @@ Personal browser start page — minimalist, in the same style as the blog.
     command mode)
   - `k` — toggle light/dark theme (stays in command mode)
   - `p` — **Pull**: fetch the latest synced settings from the DB and apply
-    them live — bookmarks, history, theme, engine, clock and timer change
+    them live — bookmarks, history, engine, clock and timer change
     in place, no page reload (stays in command mode)
   - `r` — refresh the page (stays in command mode)
   - `s` — **Settings**: open the settings mode (gear indicator); typing `/` or
@@ -167,17 +170,19 @@ after that the device holds a token and behaves exactly as before.
   value never overwrites a newer one). If anything changed the page reloads once so
   the restored state matches your other devices (unless you're already typing — then
   it applies on the next load). While the page is open, `p` in command mode runs the
-  same pull **without reloading**: the merged state (bookmarks, history, theme,
-  engine, top mode, clock, timer) is applied live, so changes made on another device
+  same pull **without reloading**: the merged state (bookmarks, history, engine,
+  top mode, clock, timer) is applied live, so changes made on another device
   show up immediately.
-- **Push on change**: every existing `save()` (mode, engine, theme, clock, timer —
+- **Push on change**: every existing `save()` (mode, engine, clock, timer —
   including stopping a timer, which syncs as a deletion) schedules a debounced POST
   to the API. Offline? The change stays local and is retried on the next change or
   load. Server-side last-write-wins protects against a stale offline device.
 - **Timers sync too**: `start.timer` stores absolute end/start timestamps, so a
   countdown started on one device resumes on another with the correct remaining time.
-- **What syncs**: `start.mode`, `start.engine`, `start.clock`, `start.theme`,
-  `start.timer`, `start.bookmarks`, `start.history`. The sync bookkeeping itself lives
+- **What syncs**: `start.mode`, `start.engine`, `start.clock`,
+  `start.timer`, `start.bookmarks`, `start.history` — and notably NOT
+  `start.theme`, which is device-specific (each device keeps its own
+  system/light/dark choice in `localStorage`). The sync bookkeeping itself lives
   in `localStorage` under `start.sync.ts` (per-key timestamps) and is never uploaded.
 - **No visible chrome**: no status indicators were added — the page looks identical.
   Sync failures are silent (console) and self-healing.
@@ -199,7 +204,9 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
   overwrite it); set when `r` is pressed in command/settings mode, cleared after the
   reload restores that submode.
 - `start.engine` — `bing`, `google`, `deepseek`, `wikipedia`, `jackyforum`; restored on load.
-- `start.theme` — `light` or `dark`; restored on load.
+- `start.theme` — `sys`, `light` or `dark`; restored on load. `sys` (the default
+  when absent) follows the OS `prefers-color-scheme` live; `light`/`dark` are
+  explicit choices pinned with `k`. Device-specific — never synced.
 - `start.clock` — `on` or `off`; restored on load (clock shown when `on`).
 - `start.timer` — the active timer: `{kind, end|start, hours, visible}` (absolute
   timestamps); restored on load; removed by `x`.
