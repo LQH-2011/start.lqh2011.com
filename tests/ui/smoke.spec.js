@@ -215,6 +215,46 @@ test('timer: countdown starts, stops with x, count-up runs', async ({ page }) =>
   await expect(page.locator('#logo')).toHaveAttribute('aria-label', 'LQH-2011');
 });
 
+test('timer: finished countdown flashes, flips to count-up, then settles', async ({ page }) => {
+  await page.goto('/');
+
+  /* 1-second countdown (0:01) so the elapse happens fast */
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 't');
+  await typeInBar(page, '0:01');
+  await page.keyboard.press('Enter');
+  const end = (await page.evaluate(() => JSON.parse(localStorage.getItem('start.timer')))).end;
+  expect(end).toBeGreaterThan(Date.now());
+
+  /* after the elapse: the record flipped to a count-up anchored at the end
+     time and the logo is flashing */
+  await page.waitForTimeout(1600);
+  const flipped = await page.evaluate(() => JSON.parse(localStorage.getItem('start.timer')));
+  expect(flipped.kind).toBe('up');
+  expect(flipped.start).toBe(end);
+  expect(await page.evaluate(
+    () => document.getElementById('logo').classList.contains('timer-flash')
+  )).toBe(true);
+
+  /* count-up advances past 00:00 */
+  await expect.poll(() => logoLabel(page)).not.toBe('00:00');
+
+  /* flash window ends; the count-up is still running */
+  await expect.poll(
+    () => page.evaluate(() => document.getElementById('logo').classList.contains('timer-flash')),
+    { timeout: 7000 }
+  ).toBe(false);
+  const settled = await logoLabel(page);
+  await page.waitForTimeout(1200);
+  expect(await logoLabel(page)).not.toBe(settled);
+
+  /* x stops it: logo back, storage cleared */
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 'x');
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', 'LQH-2011');
+  expect(await page.evaluate(() => localStorage.getItem('start.timer'))).toBeNull();
+});
+
 /* ---------- mode stack ---------- */
 
 test('backspace on empty bar climbs links -> settings -> command -> top', async ({ page }) => {
