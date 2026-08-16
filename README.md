@@ -51,8 +51,8 @@ Personal browser start page — minimalist, in the same style as the blog.
     command mode)
   - `k` — toggle light/dark theme (stays in command mode)
   - `p` — **Pull**: fetch the latest synced settings from the DB and apply
-    them live — bookmarks, history, engine, clock and timer change
-    in place, no page reload (stays in command mode)
+    them live — bookmarks, history, engine, top mode, clock and timer
+    change in place, no page reload (stays in command mode)
   - `r` — refresh the page (stays in command mode)
   - `s` — **Settings**: open the settings mode (gear indicator); typing `/` or
     `-` again in command mode does the same

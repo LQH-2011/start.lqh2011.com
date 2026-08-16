@@ -127,6 +127,23 @@ test('no pinned pref follows the OS: light OS -> light, dark OS -> dark', async 
   await dark.context.close();
 });
 
+test('CSS-only fallback: with JS disabled, a dark OS still renders dark', async ({ browser }) => {
+  /* No inline script runs, so html keeps no data-theme — the @media
+     (prefers-color-scheme: dark) html:not([data-theme]) rule must carry
+     the dark palette before/without JS. */
+  const context = await browser.newContext({
+    colorScheme: 'dark',
+    javaScriptEnabled: false,
+    baseURL: 'http://127.0.0.1:8123'
+  });
+  const page = await context.newPage();
+  await page.goto('/');
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme', /./);
+  await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(17, 17, 17)');
+  await context.close();
+});
+
 test('sys follows OS switches live; an explicit choice ignores them', async ({ browser }) => {
   /* sys (no pref): live OS switches re-theme the page */
   const s = await themedPage(browser, 'light');
