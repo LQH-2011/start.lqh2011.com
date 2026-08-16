@@ -360,7 +360,7 @@
   /* ---------- modes ---------- */
   /* url (://) — type a URL, Enter opens it in a new tab (default)
      search (magnifier) — engine search, Enter opens results in a new tab
-     command (❯) — a/b/c/k/r/s/t/u/h/x + 1-9 quick links
+     command (❯) — a/b/c/k/p/r/s/t/u/h/x + 1-9 quick links
      settings (gear) — b/g/d/w/f engines, c/k toggles, l links, e logout
      links (gear) — bookmarks: 1-9 open, a add, e edit, x delete
      timer — countdown/count-up value entry
@@ -1040,15 +1040,79 @@
   setMode(restoredSubmode || topMode);
   restoreTimer();   /* a saved timer takes the display slot (after clock restore) */
   /* The sync module (second <script> block) calls this after a pull applied
-     server changes while the user was already interacting, so the bookmark
-     nav re-renders live and an open history dropdown re-filters instead of
-     waiting for the next reload. */
-  window.__startOnPull = function () { loadBookmarks(); renderLinks(); loadHistory(); updateHistoryMenu(); };
+     server changes. full=true (manual `p` pull): re-apply the WHOLE
+     load-time restore live, without a reload — static state (theme, engine,
+     top mode, clock, timer) as well as the data-driven UI (bookmark nav,
+     history dropdown). full=false (automatic pull while the user is already
+     typing): only the data-driven UI re-renders live; the merged static
+     state is left in localStorage for the next load, so a background pull
+     never yanks the UI mid-input. The current submode is never changed —
+     only the persisted topMode is refreshed. */
+  window.__startOnPull = function (full) {
+    if (full) {
+      /* theme */
+      var t = null;
+      try { t = localStorage.getItem('start.theme'); } catch (e) {}
+      if (t === 'dark' || t === 'light') { root.dataset.theme = t; }
+      /* engine (refresh the search placeholder if that view is active) */
+      var eng = null;
+      try { eng = localStorage.getItem('start.engine'); } catch (e) {}
+      if (eng && ENGINES[eng]) {
+        engine = eng;
+        form.action = ENGINES[eng].action;
+        input.name = ENGINES[eng].q;
+        if (mode === 'search') { input.placeholder = ENGINES[eng].ph; }
+      }
+      /* persisted top mode (url/search) — never pull the user out of a submode */
+      var m = null;
+      try { m = localStorage.getItem('start.mode'); } catch (e) {}
+      if (m === 'url' || m === 'search') { topMode = m; }
+      /* clock */
+      var clk = null;
+      try { clk = localStorage.getItem('start.clock'); } catch (e) {}
+      clockOn = (clk === 'on');
+      /* timer: server deleted it -> stop the local one (back to clock/logo);
+         server has a newer record -> replace the running machinery and
+         restore the new one from storage */
+      var tr = null;
+      try { tr = localStorage.getItem('start.timer'); } catch (e) {}
+      if (tr === null) {
+        if (timerState) { stopTimer(true); }   /* no push: lastKnown already null */
+      } else {
+        if (timerState) { clearInterval(timerTick); timerTick = null; timerState = null; }
+        restoreTimer();
+      }
+      /* reconcile the display slot: a visible timer owns it; otherwise the
+         clock (if on) or the logo — same final state as a load-time restore */
+      if (!timerState || !timerVisible) {
+        if (clockOn) {
+          showClock();
+          if (!clockTimer) { clockTimer = setInterval(showClock, 1000); }
+        } else {
+          showLogo();
+          stopClockTimer();
+        }
+      }
+    }
+    /* data-driven UI */
+    loadBookmarks();
+    renderLinks();
+    loadHistory();
+    updateHistoryMenu();
+  };
+
+  /* `p` in command mode: pull the latest synced settings from the DB and
+     apply them live (no page reload). The sync module exposes the actual
+     fetch+merge; this just guards for its absence (old browsers). */
+  function pullFromServer() {
+    if (window.__startPullNow) { window.__startPullNow(); }
+  }
 
   /* ---------- sub-mode key handling ---------- */
   /* Any mode: typing "aaa" (or "/" or "-") enters command mode.
      Command mode: a=Abrir (url top), b=Buscar (search top), c=clock, k=theme,
-     s (or "/" or "-" again) = settings, t=timer, u=count-up, h=hours, x=stop,
+     p=pull from DB (no reload), s (or "/" or "-" again) = settings, t=timer,
+     u=count-up, h=hours, x=stop,
      r=reload. Settings mode: b/g/d/w/f engines, c/k toggles, l=links,
      e=logout (confirm s/y, wipes storage + reload), r=reload. Links mode:
      1-9 open, a=add, e=edit, x=delete, c/k toggles,
@@ -1061,6 +1125,7 @@
     else if (c === 'b') { selectTop('search'); }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
+    else if (c === 'p') { pullFromServer(); input.value = ''; }
     else if (c === 'r') { saveSession('start.activeMode', 'command'); location.reload(); }
     else if (c === 's' || c === '/' || c === '-') { enterSettings(); }
     else if (c === 't') {
@@ -1339,7 +1404,10 @@
   });
 
   /* ---------- pull ---------- */
-  function syncFromServer() {
+  /* manual=true when invoked from the `p` command: same fetch+merge as the
+     load-time pull, but NEVER reloads — the main IIFE applies the merged
+     state live through window.__startOnPull (static state + data UI). */
+  function syncFromServer(manual) {
     if (!token) return;
     fetch(API_BASE + '/api/data', {
       headers: { 'Authorization': 'Bearer ' + token }
@@ -1362,10 +1430,12 @@
         writeTs(ts);
         readyToPush = true;
         if (changed) {
-          /* data-driven UI (the bookmark nav) re-renders live even while the
-             user is interacting; static CSS state reloads below */
-          if (window.__startOnPull) { window.__startOnPull(); }
-          if (!interacted) { location.reload(); return; }
+          /* a manual `p` pull applies the whole merged state live; an
+             automatic pull only re-renders the data-driven UI while the
+             user is interacting (static state stays in localStorage for
+             the next load), and reloads when the user isn't typing */
+          if (window.__startOnPull) { window.__startOnPull(manual); }
+          if (!manual && !interacted) { location.reload(); return; }
         }
         /* flush local changes that never made it out (tab closed before the
            debounce fired): pull with no merge = server is older, push now */
@@ -1410,6 +1480,9 @@
   }
 
   /* ---------- hooks from the main IIFE ---------- */
+  /* Manual pull (`p` in command mode): fetch + merge, apply live, never
+     reload. Called by the main IIFE's command handler. */
+  window.__startPullNow = function () { syncFromServer(true); };
   window.__startSync = {
     changed: function (key, val) {
       if (SYNC_KEYS.indexOf(key) === -1) return;
@@ -1439,7 +1512,7 @@
                           { once: true, capture: true });
 
   token = lsGet(TOKEN_KEY);
-  if (token) { syncFromServer(); }
+  if (token) { syncFromServer(false); }
   else { showOverlay(); }
 })();
 </script>
