@@ -138,7 +138,10 @@ test('CSS-only fallback: with JS disabled, a dark OS still renders dark', async 
   });
   const page = await context.newPage();
   await page.goto('/');
-  await expect(page.locator('html')).not.toHaveAttribute('data-theme', /./);
+  /* hasAttribute, not an attribute-value regex: an empty data-theme=""
+     must also count as present, so only a true absence proves the
+     no-JS path left the attribute unset */
+  expect(await page.evaluate(() => document.documentElement.hasAttribute('data-theme'))).toBe(false);
   await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
   await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(17, 17, 17)');
   await context.close();
