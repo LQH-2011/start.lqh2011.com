@@ -1,0 +1,28 @@
+# TEMPORARY diagnostic workflow — remove before merging.
+# Isolates whether a GITHUB_TOKEN with issues: write can POST a new issue
+# comment, independent of the deployment machinery.
+name: Zz Perm Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show resolved permissions
+        run: |
+          echo "actor=${{ github.actor }} event=${{ github.event_name }}"
+      - name: POST a new issue comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "POSTing new comment to PR #45"
+          gh api -X POST repos/LQH-2011/start.lqh2011.com/issues/45/comments \
+            -f body='perm-test from GITHUB_TOKEN (workflow_dispatch)' \
+            --jq '.id' || echo "POST FAILED with exit $?"
