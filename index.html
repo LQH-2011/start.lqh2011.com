@@ -52,6 +52,13 @@
     max-width: 560px;
     height: auto;
   }
+  /* Finished-countdown flash: the block-art timer blinks for a few seconds
+     when it elapses, then settles into the count-up display. */
+  @keyframes timer-flash {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0.12; }
+  }
+  .timer-flash { animation: timer-flash 1s infinite; }
   .search {
     position: relative;
     width: 100%;
@@ -787,6 +794,7 @@
          clock — the timer KEEPS RUNNING in the background (timestamp-based,
          so it loses nothing) and `t` brings it back. */
       timerVisible = false;
+      clearTimerFlash();
       persistTimer();
       clockOn = true;
       showClock();
@@ -815,7 +823,9 @@
      `h` toggles the hours display (MM:SS by default); `x` stops the timer
      and restores the base display (block-art clock if start.clock is on,
      else the logo). A duration or elapsed time of >= 1h automatically
-     shows HH:MM:SS.
+     shows HH:MM:SS. A countdown that reaches zero FLASHES the display
+     (5s blink) and automatically flips to a count-up anchored at its end
+     time, so the logo keeps showing how long ago the timer elapsed.
      BACKGROUND RUNNING: the timer keeps ticking even when its display is
      hidden — `c` while a running timer is shown hides it and brings back
      the clock (or `c` again, the logo) WITHOUT stopping it, and `t`
@@ -829,6 +839,8 @@
   var timerState = null;   /* {kind:'down', end} | {kind:'up', start} */
   var timerTick = null;
   var timerVisible = false;   /* does the timer own the logo/clock display slot? */
+  var TIMER_FLASH_MS = 5000;  /* elapse flash duration (blinks at 1Hz) */
+  var timerFlashUntil = 0;    /* epoch ms while the flash class stays applied */
 
   /* start.timer persistence: absolute timestamps make resume drift-free
      across reloads. Written on start/toggle/show/hide, removed on stop.
@@ -866,10 +878,22 @@
        feature had no field and were always on display, so default to true. */
     timerVisible = (typeof t.visible === 'boolean') ? t.visible : true;
     if (t.kind === 'down') {
-      timerState = { kind: 'down', end: t.end };
       var left = Math.max(0, Math.round((t.end - Date.now()) / 1000));
-      if (timerVisible) { renderTimer(left); stopClockTimer(); }
-      if (left > 0) { timerTick = setInterval(tickTimer, 1000); }
+      if (left <= 0) {
+        /* already elapsed while away: flip to a count-up anchored at the
+           end time so the display shows how long ago it finished (no flash
+           — the elapse moment passed unseen) */
+        timerState = { kind: 'up', start: t.end };
+        if (timerVisible) {
+          renderTimer(Math.floor((Date.now() - t.end) / 1000));
+          stopClockTimer();
+        }
+        timerTick = setInterval(tickTimer, 1000);
+      } else {
+        timerState = { kind: 'down', end: t.end };
+        if (timerVisible) { renderTimer(left); stopClockTimer(); }
+        timerTick = setInterval(tickTimer, 1000);
+      }
     } else {
       timerState = { kind: 'up', start: t.start };
       if (timerVisible) {
@@ -898,6 +922,7 @@
   function resetTicker() {
     if (timerTick) { clearInterval(timerTick); timerTick = null; }
     timerState = null;
+    clearTimerFlash();
     try { localStorage.removeItem('start.timer'); } catch (e) {}
     /* sync hook: a stopped timer must be removed on other devices too */
     if (window.__startSync) { window.__startSync.removed('start.timer'); }
@@ -926,15 +951,39 @@
     stopClockTimer();
     var secs;
     if (timerState.kind === 'down') {
-      secs = Math.max(0, Math.round((timerState.end - Date.now()) / 1000));
-      /* a countdown that finished while hidden has no tick; show 00:00 */
-      if (secs > 0 && !timerTick) { timerTick = setInterval(tickTimer, 1000); }
+      var left = Math.max(0, Math.round((timerState.end - Date.now()) / 1000));
+      if (left <= 0) {
+        /* finished while hidden: flip to a count-up (no flash — the elapse
+           moment already passed unseen) */
+        timerState = { kind: 'up', start: timerState.end };
+        secs = Math.floor((Date.now() - timerState.start) / 1000);
+      } else {
+        secs = left;
+      }
+      if (!timerTick) { timerTick = setInterval(tickTimer, 1000); }
     } else {
       secs = Math.floor((Date.now() - timerState.start) / 1000);
       if (!timerTick) { timerTick = setInterval(tickTimer, 1000); }
     }
     renderTimer(secs);
     persistTimer();
+  }
+  function setTimerFlash() {
+    timerFlashUntil = Date.now() + TIMER_FLASH_MS;
+    logo.classList.add('timer-flash');
+  }
+  function clearTimerFlash() {
+    timerFlashUntil = 0;
+    logo.classList.remove('timer-flash');
+  }
+  function flipToCountup() {
+    /* A finished countdown becomes a count-up anchored at its end time, so
+       the display keeps ticking "how long ago it elapsed". Visible finishes
+       flash so the elapse is unmistakable; hidden ones just flip silently. */
+    timerState = { kind: 'up', start: timerState.end };
+    persistTimer();
+    if (timerVisible) setTimerFlash();
+    if (!timerTick) { timerTick = setInterval(tickTimer, 1000); }
   }
   function tickTimer() {
     if (!timerState) return;
@@ -943,13 +992,13 @@
       /* only render while the timer owns the display slot — when hidden
          (clock/logo showing) the tick keeps running to catch the finish */
       if (timerVisible) renderTimer(left);
-      if (left <= 0) {
-        /* finished: stop ticking but keep 00:00 on display until stopped */
-        clearInterval(timerTick);
-        timerTick = null;
-      }
+      if (left <= 0) flipToCountup();
     } else if (timerVisible) {
       renderTimer(Math.floor((Date.now() - timerState.start) / 1000));
+    }
+    /* drop the flash once its window passes; the count-up keeps running */
+    if (timerVisible && timerFlashUntil && Date.now() >= timerFlashUntil) {
+      clearTimerFlash();
     }
   }
   function startCountdown(totalSecs) {
