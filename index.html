@@ -26,6 +26,22 @@
     --logo-shadow: #2a2a2a;
     color-scheme: dark;
   }
+  /* Before the theme script resolves the pref, follow the OS so the first
+     paint matches the system instead of flashing light. (The inline script
+     runs synchronously before paint and always sets data-theme, so this only
+     matters for the pre-JS / no-JS window.) */
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme]) {
+      --bg: #111111;
+      --ink: #e8e8e8;
+      --muted: #9a9a9a;
+      --faint: #6b6b6b;
+      --line: #333333;
+      --logo: #e8e8e8;
+      --logo-shadow: #2a2a2a;
+      color-scheme: dark;
+    }
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
   body {
@@ -347,12 +363,28 @@
   function saveSession(key, val) { try { sessionStorage.setItem(key, val); } catch (e) {} }
 
   /* ---------- theme ---------- */
-  /* No button and no OS detection: default is light, `k` toggles it.
-     The choice is persisted so a page refresh keeps it. */
+  /* Three states, stored per-device in localStorage under start.theme:
+     'sys' (the default when absent) follows the OS prefers-color-scheme
+     and updates live; 'light'/'dark' are explicit choices that override
+     the OS until the user toggles again. The choice is device-specific:
+     start.theme is deliberately NOT in the sync key list, so each device
+     keeps its own theme. `k` flips to the opposite of what is currently
+     shown — from the system default that pins an explicit choice. */
+  function getThemePref() {
+    var t = null;
+    try { t = localStorage.getItem('start.theme'); } catch (e) {}
+    return (t === 'light' || t === 'dark') ? t : 'sys';
+  }
+  function systemDark() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  function applyTheme(pref) {
+    root.dataset.theme = (pref === 'dark' || (pref === 'sys' && systemDark())) ? 'dark' : 'light';
+  }
   function toggleTheme() {
     var next = (root.dataset.theme === 'dark') ? 'light' : 'dark';
-    root.dataset.theme = next;
     save('start.theme', next);
+    applyTheme(next);
   }
 
   /* ---------- engines ---------- */
@@ -1064,8 +1096,7 @@
      shortcut listeners below and leave the page dead. */
   var restoredSubmode = null;
   try {
-    var savedTheme = localStorage.getItem('start.theme');
-    if (savedTheme === 'dark' || savedTheme === 'light') { root.dataset.theme = savedTheme; }
+    applyTheme(getThemePref());   /* 'sys' follows the OS; explicit light/dark wins */
     var savedEngine = localStorage.getItem('start.engine');
     if (savedEngine && ENGINES[savedEngine]) { setEngine(savedEngine); }
     var savedClock = localStorage.getItem('start.clock');
@@ -1083,6 +1114,18 @@
     }
   } catch (e) {}
   try { sessionStorage.removeItem('start.activeMode'); } catch (e) {}
+  /* Follow OS theme changes live — but ONLY while the pref is 'sys'. An
+     explicit light/dark choice ignores later OS switches; `k` pins a new
+     explicit choice. Re-read the pref on every change so a toggle between
+     events is respected. */
+  if (window.matchMedia) {
+    var systemThemeMq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onSystemThemeChange = function () {
+      if (getThemePref() === 'sys') { applyTheme('sys'); }
+    };
+    if (systemThemeMq.addEventListener) { systemThemeMq.addEventListener('change', onSystemThemeChange); }
+    else if (systemThemeMq.addListener) { systemThemeMq.addListener(onSystemThemeChange); }
+  }
   loadBookmarks();
   loadHistory();
   renderLinks();
@@ -1099,10 +1142,9 @@
      only the persisted topMode is refreshed. */
   window.__startOnPull = function (full) {
     if (full) {
-      /* theme */
-      var t = null;
-      try { t = localStorage.getItem('start.theme'); } catch (e) {}
-      if (t === 'dark' || t === 'light') { root.dataset.theme = t; }
+      /* theme — device-specific, never synced; re-apply the LOCAL pref to
+         mirror the load-time restore (a pull can't change it) */
+      applyTheme(getThemePref());
       /* engine (refresh the search placeholder if that view is active) */
       var eng = null;
       try { eng = localStorage.getItem('start.engine'); } catch (e) {}
@@ -1376,8 +1418,11 @@
     API_BASE = '';
   }
 
+  /* Device-specific keys (theme) are intentionally NOT listed: start.theme
+     stays in localStorage only, so each device keeps its own light/dark/
+     system choice. */
   var SYNC_KEYS = ['start.mode', 'start.engine', 'start.clock',
-                   'start.theme', 'start.timer', 'start.bookmarks',
+                   'start.timer', 'start.bookmarks',
                    'start.history'];
   var TOKEN_KEY = 'start.token';
   var TS_KEY = 'start.sync.ts';   /* key -> ms of the value in localStorage */

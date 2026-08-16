@@ -93,6 +93,100 @@ test('aaa enters command mode; k toggles theme and stays in command mode', async
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('light');
 });
 
+/* ---------- theme: system detection + device-specific pref ---------- */
+
+/* Fresh context with a given OS color scheme, seeded like the default
+   context (fake token + bookmarks + history + window.open stub), plus an
+   optional extra localStorage seed. Each context = a fresh device. */
+async function themedPage(browser, colorScheme, extraSeed) {
+  const context = await browser.newContext({
+    colorScheme,
+    baseURL: 'http://127.0.0.1:8123'
+  });
+  await context.addInitScript(SEED);
+  if (extraSeed) { await context.addInitScript(extraSeed); }
+  const page = await context.newPage();
+  await page.goto('/');
+  return { context, page };
+}
+
+async function theme(page) {
+  return page.evaluate(() => document.documentElement.dataset.theme);
+}
+
+test('no pinned pref follows the OS: light OS -> light, dark OS -> dark', async ({ browser }) => {
+  const light = await themedPage(browser, 'light');
+  expect(await theme(light.page)).toBe('light');
+  expect(await light.page.evaluate(() => localStorage.getItem('start.theme'))).toBeNull();
+  await light.context.close();
+
+  const dark = await themedPage(browser, 'dark');
+  expect(await theme(dark.page)).toBe('dark');
+  /* following the system never writes a pref — a fresh load stays 'sys' */
+  expect(await dark.page.evaluate(() => localStorage.getItem('start.theme'))).toBeNull();
+  await dark.context.close();
+});
+
+test('CSS-only fallback: with JS disabled, a dark OS still renders dark', async ({ browser }) => {
+  /* No inline script runs, so html keeps no data-theme — the @media
+     (prefers-color-scheme: dark) html:not([data-theme]) rule must carry
+     the dark palette before/without JS. */
+  const context = await browser.newContext({
+    colorScheme: 'dark',
+    javaScriptEnabled: false,
+    baseURL: 'http://127.0.0.1:8123'
+  });
+  const page = await context.newPage();
+  await page.goto('/');
+  /* hasAttribute, not an attribute-value regex: an empty data-theme=""
+     must also count as present, so only a true absence proves the
+     no-JS path left the attribute unset */
+  expect(await page.evaluate(() => document.documentElement.hasAttribute('data-theme'))).toBe(false);
+  await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(17, 17, 17)');
+  await context.close();
+});
+
+test('sys follows OS switches live; an explicit choice ignores them', async ({ browser }) => {
+  /* sys (no pref): live OS switches re-theme the page */
+  const s = await themedPage(browser, 'light');
+  await s.page.emulateMedia({ colorScheme: 'dark' });
+  await expect.poll(() => theme(s.page)).toBe('dark');
+  await s.page.emulateMedia({ colorScheme: 'light' });
+  await expect.poll(() => theme(s.page)).toBe('light');
+  await s.context.close();
+
+  /* explicit light pinned on a dark OS: OS switches must not move it */
+  const e = await themedPage(browser, 'dark',
+    () => localStorage.setItem('start.theme', 'light'));
+  expect(await theme(e.page)).toBe('light');
+  await e.page.emulateMedia({ colorScheme: 'light' });
+  await e.page.waitForTimeout(100);
+  expect(await theme(e.page)).toBe('light');
+  await e.page.emulateMedia({ colorScheme: 'dark' });
+  await e.page.waitForTimeout(100);
+  expect(await theme(e.page)).toBe('light');
+  await e.context.close();
+});
+
+test('k from the system default pins the opposite explicit choice', async ({ browser }) => {
+  const { context, page } = await themedPage(browser, 'dark');
+  expect(await theme(page)).toBe('dark');
+  expect(await page.evaluate(() => localStorage.getItem('start.theme'))).toBeNull();
+
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 'k');
+  expect(await theme(page)).toBe('light');
+  expect(await page.evaluate(() => localStorage.getItem('start.theme'))).toBe('light');
+
+  /* the pinned choice survives later OS switches */
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.waitForTimeout(150);
+  expect(await theme(page)).toBe('light');
+  await context.close();
+});
+
 /* ---------- settings / engines ---------- */
 
 test('settings mode switches engines and lands in search mode', async ({ page }) => {
