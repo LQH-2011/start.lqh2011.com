@@ -18,9 +18,15 @@ on:
 
 permissions:
   # Read deployments to detect stale events and resolve the PR from a commit;
-  # PR comments are posted via the issues comments API (issues: write).
+  # PR comments are posted via the issues comments API. NOTE: the GITHUB_TOKEN
+  # needs pull-requests: write here even though the REST docs say issues: write
+  # alone suffices — empirically (verified 2026-08-16) creating a NEW comment
+  # on a PULL REQUEST 403s with "Resource not accessible by integration" when
+  # pull-requests is read-only, while updating an existing comment still works.
+  # A previous CodeRabbit "hardening" to pull-requests: read silently broke
+  # comment creation for any PR that had no prior status comment.
   deployments: read
-  pull-requests: read
+  pull-requests: write
   issues: write
   contents: read   # for actions/checkout (comment script lives in the repo)
 
@@ -184,7 +190,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       deployments: read
-      pull-requests: read
+      pull-requests: write
       issues: write
       contents: read
     steps:
