@@ -14,9 +14,11 @@
 #     this PR's head commit is ready, then aliases. The `opened` event finds
 #     an already-built preview immediately, which replaces the old
 #     backfill-comment job.
-#   - Runs queue in a single concurrency group (no cancel-in-progress), so
-#     no run is ever cancelled: the newest PR event always aliases last and
-#     preview.lqh2011.com stays on the most recent ready preview.
+#   - Runs serialize in a single concurrency group (cancel-in-progress:
+#     false). GitHub keeps only the newest pending run per group — under a
+#     burst of pushes, older queued runs are cancelled and the newest event's
+#     run survives, so preview.lqh2011.com still ends on the most recent
+#     ready preview. A single run at a time never races another alias.
 #   - Build failures and wait timeouts exit cleanly (exit 0, no red X on the
 #     PR); the next push retries.
 #
@@ -45,9 +47,11 @@ permissions:
 
 jobs:
   alias-preview:
-    # Queue (never cancel): a newer PR event waits for the older run, then
-    # aliases last — so preview.lqh2011.com always ends on the newest ready
-    # preview and no run is omitted from the Actions list.
+    # Serialize alias runs so a newer event can never race an older one.
+    # GitHub's concurrency groups accept only group + cancel-in-progress (no
+    # max/bounded queue): with cancel-in-progress: false, at most one run is
+    # in progress and the newest pending run is kept — a burst of pushes
+    # cancels older queued runs, and the newest event's run aliases last.
     concurrency:
       group: vercel-preview-alias
       cancel-in-progress: false

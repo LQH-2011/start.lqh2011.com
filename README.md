@@ -298,8 +298,10 @@ How it works: the workflow triggers on PR events (`opened`, `synchronize`,
 GitHub's deployments API until the Vercel preview build for that PR's head
 commit is ready, then runs `vercel alias <preview-url> preview.lqh2011.com`.
 The alias is single and last-wins — the most recently deployed PR owns it.
-Runs queue in one concurrency group (they are never cancelled), so the newest
-PR event always aliases last. Build failures and wait timeouts exit cleanly
+Runs serialize in one concurrency group (`cancel-in-progress: false`); GitHub
+keeps only the newest pending run per group, so under a burst of pushes older
+queued runs are cancelled and the newest event's run aliases last. Build
+failures and wait timeouts exit cleanly
 (no red X on the PR) and the next push retries. The workflow also posts (and
 keeps updating) one comment per PR showing whether the aliasing succeeded —
 including when a PR is opened after its preview was already built (the
