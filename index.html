@@ -374,8 +374,10 @@
      and updates live; 'light'/'dark' are explicit choices that override
      the OS until the user toggles again. The choice is device-specific:
      start.theme is deliberately NOT in the sync key list, so each device
-     keeps its own theme. `k` flips to the opposite of what is currently
-     shown — from the system default that pins an explicit choice. */
+     keeps its own theme. `k` cycles through all three states: from 'sys'
+     it pins the opposite of what is currently shown; a pinned choice that
+     matches the OS returns to 'sys' (so auto/system is always reachable),
+     otherwise it flips to the other explicit choice. */
   function getThemePref() {
     var t = null;
     try { t = localStorage.getItem('start.theme'); } catch (e) {}
@@ -388,7 +390,18 @@
     root.dataset.theme = (pref === 'dark' || (pref === 'sys' && systemDark())) ? 'dark' : 'light';
   }
   function toggleTheme() {
-    var next = (root.dataset.theme === 'dark') ? 'light' : 'dark';
+    var pref = getThemePref();
+    var next;
+    if (pref === 'sys') {
+      /* first press from system mode: pin the opposite of what is shown */
+      next = (root.dataset.theme === 'dark') ? 'light' : 'dark';
+    } else if (pref === (systemDark() ? 'dark' : 'light')) {
+      /* pinned choice matches the OS: the next press returns to system mode */
+      next = 'sys';
+    } else {
+      /* pinned choice differs from the OS: flip to the other explicit choice */
+      next = (pref === 'light') ? 'dark' : 'light';
+    }
     save('start.theme', next);
     applyTheme(next);
   }

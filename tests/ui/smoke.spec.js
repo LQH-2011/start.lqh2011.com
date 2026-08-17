@@ -187,6 +187,46 @@ test('k from the system default pins the opposite explicit choice', async ({ bro
   await context.close();
 });
 
+test('k cycles back to system mode and live OS switching resumes', async ({ browser }) => {
+  /* dark OS, no pref: sys -> k pins light -> k pins dark -> k returns to sys.
+     A pinned choice that matches the OS returns to auto; one that differs
+     flips to the other explicit choice. */
+  const d = await themedPage(browser, 'dark');
+  expect(await theme(d.page)).toBe('dark');
+  await typeInBar(d.page, 'aaa');
+  await typeInBar(d.page, 'k');
+  expect(await theme(d.page)).toBe('light');                       /* sys -> pinned light */
+  expect(await d.page.evaluate(() => localStorage.getItem('start.theme'))).toBe('light');
+  await typeInBar(d.page, 'k');
+  expect(await theme(d.page)).toBe('dark');                        /* pinned light -> pinned dark */
+  expect(await d.page.evaluate(() => localStorage.getItem('start.theme'))).toBe('dark');
+  await typeInBar(d.page, 'k');
+  expect(await theme(d.page)).toBe('dark');                        /* pinned dark == dark OS -> sys */
+  expect(await d.page.evaluate(() => localStorage.getItem('start.theme'))).toBe('sys');
+
+  /* sys again: live OS switches re-theme the page */
+  await d.page.emulateMedia({ colorScheme: 'light' });
+  await expect.poll(() => theme(d.page)).toBe('light');
+  await d.page.emulateMedia({ colorScheme: 'dark' });
+  await expect.poll(() => theme(d.page)).toBe('dark');
+  await d.context.close();
+
+  /* light OS: sys -> dark -> light(pin, matches OS) -> sys */
+  const l = await themedPage(browser, 'light');
+  expect(await theme(l.page)).toBe('light');
+  await typeInBar(l.page, 'aaa');
+  await typeInBar(l.page, 'k');
+  expect(await theme(l.page)).toBe('dark');                        /* sys -> pinned dark */
+  await typeInBar(l.page, 'k');
+  expect(await theme(l.page)).toBe('light');                       /* pinned dark -> pinned light */
+  await typeInBar(l.page, 'k');
+  expect(await theme(l.page)).toBe('light');                       /* pinned light == light OS -> sys */
+  expect(await l.page.evaluate(() => localStorage.getItem('start.theme'))).toBe('sys');
+  await l.page.emulateMedia({ colorScheme: 'dark' });
+  await expect.poll(() => theme(l.page)).toBe('dark');
+  await l.context.close();
+});
+
 /* ---------- settings / engines ---------- */
 
 test('settings mode switches engines and lands in search mode', async ({ page }) => {
