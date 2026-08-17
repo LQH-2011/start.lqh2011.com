@@ -223,10 +223,14 @@ test('settings mode: e selects the RAE Diccionario del Estudiante and submits a 
   expect(await page.evaluate(() => localStorage.getItem('start.engine'))).toBe('rae');
 
   /* search mode now: the RAE query goes in the URL path, not a query string —
-     the submit handler builds it manually and opens it in a new tab */
-  await typeInBar(page, 'casa');
+     the submit handler builds it manually and opens it in a new tab; the
+     query includes spaces, Unicode and a reserved path character so the
+     percent-encoding is actually exercised */
+  await typeInBar(page, 'casa de niño/qué?');
   await page.keyboard.press('Enter');
-  expect(await opened(page)).toEqual(['https://www.rae.es/diccionario-estudiante/casa']);
+  expect(await opened(page)).toEqual([
+    'https://www.rae.es/diccionario-estudiante/casa%20de%20ni%C3%B1o%2Fqu%C3%A9%3F'
+  ]);
   await expect(page.locator('#q')).toHaveJSProperty('value', '');
 });
 
