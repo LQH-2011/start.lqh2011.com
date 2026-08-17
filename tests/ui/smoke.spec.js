@@ -212,6 +212,42 @@ test('settings mode switches engines and lands in search mode', async ({ page })
   await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Buscar en Jacky Forum…');
 });
 
+test('settings mode: e selects the RAE Diccionario del Estudiante and submits a path URL', async ({ page }) => {
+  await page.goto('/');
+
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 'e');
+  await expect(page.locator('.search')).toHaveAttribute('action', 'https://www.rae.es/diccionario-estudiante/');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Buscar en Diccionario del Estudiante…');
+  expect(await page.evaluate(() => localStorage.getItem('start.engine'))).toBe('rae');
+
+  /* search mode now: the RAE query goes in the URL path, not a query string —
+     the submit handler builds it manually and opens it in a new tab */
+  await typeInBar(page, 'casa');
+  await page.keyboard.press('Enter');
+  expect(await opened(page)).toEqual(['https://www.rae.es/diccionario-estudiante/casa']);
+  await expect(page.locator('#q')).toHaveJSProperty('value', '');
+});
+
+test('settings mode: x arms logout (moved from e)', async ({ page }) => {
+  await page.goto('/');
+
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 'x');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', '¿Cerrar sesión? (s/n)');
+
+  /* Escape cancels back to settings */
+  await page.locator('#q').focus();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Ajustes…');
+
+  /* and e is no longer logout: it picks the RAE engine instead */
+  await typeInBar(page, 'e');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Buscar en Diccionario del Estudiante…');
+});
+
 /* ---------- url opener ---------- */
 
 test('url mode opens normalized URLs, records history, rejects dangerous schemes', async ({ page }) => {
