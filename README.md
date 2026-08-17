@@ -51,7 +51,7 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `b` — **Buscar**: back to the search bar (selected top mode, persisted)
   - `c` — toggle the "LQH-2011" logo and a live HH:MM:SS block-art clock (stays in
     command mode)
-  - `k` — cycle theme: system → light → dark → system (stays in command mode)
+  - `k` — cycle theme: system → opposite of the OS theme → other explicit theme → system (stays in command mode)
   - `p` — **Pull**: fetch the latest synced settings from the DB and apply
     them live — bookmarks, history, engine, top mode, clock and timer
     change in place, no page reload (stays in command mode)
@@ -117,7 +117,7 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `t` — show the running timer (focus stays where it is); with no timer, enter
     timer setup and focus the bar
   - `c` — toggle the block-art clock (focus stays where it is)
-  - `k` — cycle theme: system → light → dark → system (focus stays where it is)
+  - `k` — cycle theme: system → opposite of the OS theme → other explicit theme → system (focus stays where it is)
   Modifier combos (`Ctrl+…`, `Cmd+…`, `Alt+…`) are never intercepted. While any
   editable element is focused (the bar, a textarea, `contenteditable`) these keys
   type into it normally (in-bar `/` or `-` still enters command mode).
@@ -210,7 +210,7 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
 - `start.engine` — `bing`, `google`, `deepseek`, `wikipedia`, `jackyforum`, `rae`; restored on load.
 - `start.theme` — `sys`, `light` or `dark`; restored on load. `sys` (the default
   when absent) follows the OS `prefers-color-scheme` live; `light`/`dark` are
-  explicit choices reached by cycling with `k` (system → light → dark → system).
+  explicit choices reached by cycling with `k` (system → opposite of the OS theme → other explicit theme → system).
   Device-specific — never synced.
 - `start.clock` — `on` or `off`; restored on load (clock shown when `on`).
 - `start.timer` — the active timer: `{kind, end|start, hours, visible}` (absolute
