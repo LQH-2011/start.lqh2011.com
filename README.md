@@ -74,9 +74,11 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `d` — DeepSeek chat (`https://chat.deepseek.com/?q=…`)
   - `w` — Wikipedia (`https://en.wikipedia.org/w/index.php`, `name="search"`)
   - `f` — Jacky Forum (`https://f.m14ga.org/?q=…`)
+  - `e` — RAE Diccionario del Estudiante (`https://www.rae.es/diccionario-estudiante/{q}` —
+    the query goes in the URL path)
   - `c` / `k` — same toggles as in command mode (stay in settings)
   - `l` — **Favoritos**: open the links/bookmarks submenu
-  - `e` — **Cerrar sesión** (logout): type `s` (or `y`) and press **Enter**
+  - `x` — **Cerrar sesión** (logout): type `s` (or `y`) and press **Enter**
     to wipe `localStorage` and `sessionStorage` — sync token, settings and
     bookmarks — and reload the page, so the password overlay returns; type
     any other response and press Enter, or press Escape or Backspace on an
@@ -160,7 +162,7 @@ after that the device holds a token and behaves exactly as before.
 - **One-time password gate**: with no token in `localStorage`, a minimal overlay
   (matching the page design) asks for the password. On success a signed token is
   stored (`start.token`, valid 90 days); on failure the overlay shows an error.
-  To log out, press `e` in settings mode, type `s` (or `y`) and press Enter:
+  To log out, press `x` in settings mode, type `s` (or `y`) and press Enter:
   the page wipes `localStorage` and `sessionStorage` — token included — and
   reloads, so the overlay returns on that device (the synced data stays in
   the DB for the other devices). Any other response on Enter cancels.
@@ -203,7 +205,7 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
   `sessionStorage` (NOT `localStorage`, so other same-origin tabs can't consume or
   overwrite it); set when `r` is pressed in command/settings mode, cleared after the
   reload restores that submode.
-- `start.engine` — `bing`, `google`, `deepseek`, `wikipedia`, `jackyforum`; restored on load.
+- `start.engine` — `bing`, `google`, `deepseek`, `wikipedia`, `jackyforum`, `rae`; restored on load.
 - `start.theme` — `sys`, `light` or `dark`; restored on load. `sys` (the default
   when absent) follows the OS `prefers-color-scheme` live; `light`/`dark` are
   explicit choices pinned with `k`. Device-specific — never synced.

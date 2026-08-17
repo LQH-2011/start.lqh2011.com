@@ -338,7 +338,13 @@
     google:    { action: 'https://www.google.com/search',        q: 'q',      ph: 'Buscar en Google…' },
     deepseek:  { action: 'https://chat.deepseek.com/',           q: 'q',      ph: 'Buscar en DeepSeek…' },
     wikipedia: { action: 'https://en.wikipedia.org/w/index.php', q: 'search', ph: 'Buscar en Wikipedia…' },
-    jackyforum: { action: 'https://f.m14ga.org/',                 q: 'q',      ph: 'Buscar en Jacky Forum…' }
+    jackyforum: { action: 'https://f.m14ga.org/',                 q: 'q',      ph: 'Buscar en Jacky Forum…' },
+    /* RAE Diccionario del Estudiante: the query lives in the URL path
+       (https://www.rae.es/diccionario-estudiante/{q}), not a query string, so
+       this engine also carries a `url` template the submit handler uses
+       instead of a native GET form submission. */
+    rae: { action: 'https://www.rae.es/diccionario-estudiante/',  q: 'q',      ph: 'Buscar en Diccionario del Estudiante…',
+           url: 'https://www.rae.es/diccionario-estudiante/{q}' }
   };
 
   var engine = 'bing';
@@ -400,7 +406,7 @@
   /* url (://) — type a URL, Enter opens it in a new tab (default)
      search (magnifier) — engine search, Enter opens results in a new tab
      command (❯) — a/b/c/k/p/r/s/t/u/h/x + 1-9 quick links
-     settings (gear) — b/g/d/w/f engines, c/k toggles, l links, e logout
+     settings (gear) — b/g/d/w/f/e engines, c/k toggles, l links, x logout
      links (gear) — bookmarks: 1-9 open, a add, e edit, x delete
      timer — countdown/count-up value entry
      topMode is the selected url/search mode, persisted as start.mode. */
@@ -683,7 +689,7 @@
     input.value = '';
     input.placeholder = '¿Borrar? (s/n)';
   }
-  /* logout reuses the same single bar; `e` in settings arms it. Confirming
+  /* logout reuses the same single bar; `x` in settings arms it. Confirming
      wipes ALL local state in both storages (token, settings, bookmarks) and
      reloads, so the auth overlay returns — the DB keeps synced data for
      other devices. */
@@ -1204,8 +1210,8 @@
      Command mode: a=Abrir (url top), b=Buscar (search top), c=clock, k=theme,
      p=pull from DB (no reload), s (or "/" or "-" again) = settings, t=timer,
      u=count-up, h=hours, x=stop,
-     r=reload. Settings mode: b/g/d/w/f engines, c/k toggles, l=links,
-     e=logout (confirm s/y, wipes storage + reload), r=reload. Links mode:
+     r=reload. Settings mode: b/g/d/w/f/e engines, c/k toggles, l=links,
+     x=logout (confirm s/y, wipes storage + reload), r=reload. Links mode:
      1-9 open, a=add, e=edit, x=delete, c/k toggles,
      r=reload.
      Any other character exits to the selected top mode keeping the text;
@@ -1238,10 +1244,11 @@
     else if (c === 'd') { setEngine('deepseek');  selectTop('search'); }
     else if (c === 'w') { setEngine('wikipedia'); selectTop('search'); }
     else if (c === 'f') { setEngine('jackyforum'); selectTop('search'); }
+    else if (c === 'e') { setEngine('rae');         selectTop('search'); }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
     else if (c === 'l') { enterLinks(); }
-    else if (c === 'e') { startLogout(); }
+    else if (c === 'x') { startLogout(); }
     else if (c === 'r') { saveSession('start.activeMode', 'settings'); location.reload(); }
     else { exitToTop(); }
   }
@@ -1396,6 +1403,15 @@
     }
     /* search mode: results open in a new tab, so clear the input for the next query;
        defer so the submitted query is not affected */
+    var eng = ENGINES[engine];
+    if (eng && eng.url) {
+      /* path-based engine (RAE Diccionario del Estudiante): the query lives
+         in the URL path (…/diccionario-estudiante/{q}), which a native GET
+         form can't express — build the URL and open it directly */
+      e.preventDefault();
+      window.open(eng.url.replace('{q}', encodeURIComponent(input.value.trim())),
+                  '_blank', 'noopener');
+    }
     setTimeout(function () { input.value = ''; }, 0);
   });
 })();
