@@ -39,11 +39,15 @@ Personal browser start page — minimalist, in the same style as the blog.
   server stores the latest 20-item list, never an accumulation). While the bar has
   text in url mode, a dropdown the same width as the bar lists the entries matching
   what you've typed (case-insensitive substring, scheme ignored — `git` finds
-  `github.com`), most recent first, with the first match highlighted. `↑`/`↓` move the
-  highlight (wrapping), **Enter** (or a click) opens the highlighted entry, `Esc` or
-  clicking away closes the menu, and it never appears with an empty bar or in search
-  mode. The combobox is exposed to screen readers (`aria-controls`/`aria-expanded`/
-  `aria-activedescendant`).
+  `github.com`), most recent first. The first row is always **Abrir este URL…**: it
+  opens the typed text as a URL, so a new URL that happens to be a substring of an
+  older one (`example.com` typed after `subdomain.example.com`) is still reachable
+  with Enter instead of being captured by the old entry. The matching history
+  entries follow, and the action row is highlighted by default. `↑`/`↓` move the
+  highlight (wrapping), **Enter** (or a click) opens the highlighted row, **`d`**
+  deletes the highlighted history entry, `Esc` or clicking away closes the menu,
+  and it never appears with an empty bar or in search mode. The combobox is exposed
+  to screen readers (`aria-controls`/`aria-expanded`/`aria-activedescendant`).
 - **Command mode**: type `aaa` (or `Aaa` / `/` / `-`, case-insensitive) in the bar to
   enter command mode (the indicator swaps to a `❯` on the left; the input stays
   left-aligned). Then (letters are case-insensitive):
