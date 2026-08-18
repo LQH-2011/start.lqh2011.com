@@ -320,23 +320,85 @@ test('url mode opens normalized URLs, records history, rejects dangerous schemes
 
 /* ---------- history dropdown ---------- */
 
-test('history dropdown filters, navigates, opens on Enter, closes on Escape', async ({ page }) => {
+test('history dropdown: "Abrir este URL…" first, arrows navigate, Enter opens the highlighted row', async ({ page }) => {
   await page.goto('/');
 
   await typeInBar(page, 'git');
   await expect(page.locator('#urlHistory')).toBeVisible();
-  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(1);
-  await expect(page.locator('#urlHistory .url-history-item')).toHaveText('github.com/lqh-2011');
+  /* row 0 is the action row; the matching history entry follows */
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(2);
+  await expect(page.locator('#urlHistory .url-history-item').first()).toHaveText('Abrir este URL…');
+  await expect(page.locator('#urlHistory .url-history-item').nth(1)).toHaveText('github.com/lqh-2011');
 
   await page.keyboard.press('Escape');
   await expect(page.locator('#urlHistory')).toBeHidden();
 
+  /* ArrowDown moves the highlight onto the history entry; Enter opens it */
   await typeInBar(page, 'git');
-  await expect(page.locator('#urlHistory')).toBeVisible();
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   expect(await opened(page)).toEqual(['https://github.com/lqh-2011']);
   await expect(page.locator('#q')).toHaveJSProperty('value', '');
   await expect(page.locator('#urlHistory')).toBeHidden();
+});
+
+test('bug: a typed URL that is a substring of an older entry still opens on Enter', async ({ page }) => {
+  await page.goto('/');
+
+  /* Seed history has https://example.org/docs — typing the bare domain
+     matches that older entry, but Enter must open the TYPED url */
+  await typeInBar(page, 'example.org');
+  await expect(page.locator('#urlHistory')).toBeVisible();
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(2);
+  await expect(page.locator('#urlHistory .url-history-item').nth(1)).toHaveText('example.org/docs');
+
+  await page.keyboard.press('Enter');
+  expect(await opened(page)).toEqual(['https://example.org']);
+  await expect(page.locator('#q')).toHaveJSProperty('value', '');
+  await expect(page.locator('#urlHistory')).toBeHidden();
+});
+
+test('d deletes the highlighted history entry and re-renders the dropdown', async ({ page }) => {
+  await page.goto('/');
+
+  /* add a second entry so one match remains after the delete */
+  await typeInBar(page, 'example.org/extra');
+  await page.keyboard.press('Enter');
+  expect(await opened(page)).toEqual(['https://example.org/extra']);
+
+  await typeInBar(page, 'example.org');
+  await expect(page.locator('#urlHistory')).toBeVisible();
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(3);   /* action + 2 matches */
+  await expect(page.locator('#urlHistory .url-history-item').nth(1)).toHaveText('example.org/extra');
+  await expect(page.locator('#urlHistory .url-history-item').nth(2)).toHaveText('example.org/docs');
+
+  await page.keyboard.press('ArrowDown');   /* highlight example.org/extra (newest first) */
+  await page.keyboard.press('d');
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(2);
+  await expect(page.locator('#urlHistory .url-history-item').nth(1)).toHaveText('example.org/docs');
+
+  const history = await page.evaluate(() => JSON.parse(localStorage.getItem('start.history')));
+  expect(history).not.toContain('https://example.org/extra');
+  expect(history).toContain('https://example.org/docs');
+  /* nothing re-opened, the bar keeps the typed text */
+  expect(await opened(page)).toEqual(['https://example.org/extra']);
+  await expect(page.locator('#q')).toHaveJSProperty('value', 'example.org');
+});
+
+test('modified d (Ctrl+D) does not delete the highlighted history entry', async ({ page }) => {
+  await page.goto('/');
+
+  await typeInBar(page, 'git');
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(2);
+  await page.keyboard.press('ArrowDown');   /* highlight github.com/lqh-2011 */
+  await page.keyboard.press('Control+d');   /* browser bookmark shortcut */
+
+  /* the entry survives and the dropdown is untouched */
+  const history = await page.evaluate(() => JSON.parse(localStorage.getItem('start.history')));
+  expect(history).toContain('https://github.com/lqh-2011');
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(2);
+  await expect(page.locator('#urlHistory .url-history-item').nth(1)).toHaveText('github.com/lqh-2011');
+  expect(await opened(page)).toEqual([]);
 });
 
 test('history dropdown never opens in search mode', async ({ page }) => {

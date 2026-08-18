@@ -150,6 +150,12 @@
     cursor: pointer;
   }
   .url-history-item.active { background: var(--line); }
+  /* "Abrir este URL…" row: an action (opens the typed text), not a history
+     entry — muted + separated so it reads as such. */
+  .url-history-action {
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+  }
   .links {
     display: flex;
     flex-wrap: wrap;
@@ -482,11 +488,16 @@
      synced value lives on the user's own sync server in plaintext — the
      user explicitly opted into this. While the bar has text in url mode, a
      dropdown lists the entries matching the typed letters (case-insensitive
-     substring on the scheme-stripped URL); the first match is highlighted.
-     ArrowUp/Down move the highlight (wrapping), Enter or a click opens the
-     highlighted entry, Escape/blur hides the menu. The menu never appears
-     in the other modes or with an empty bar. The input is exposed to
-     assistive tech as a combobox (aria-controls/expanded/activedescendant)
+     substring on the scheme-stripped URL). The first row is ALWAYS
+     "Abrir este URL…": it opens the typed text as a URL, so a new URL that
+     is a substring of an older entry (e.g. "example.com" typed after
+     "subdomain.example.com") is still reachable with Enter instead of being
+     captured by the old entry. The matching history entries follow, and the
+     action row is the default highlight. ArrowUp/Down move the highlight
+     (wrapping), Enter or a click opens the highlighted row, `d` deletes a
+     highlighted history entry, Escape/blur hides the menu. The menu never
+     appears in the other modes or with an empty bar. The input is exposed
+     to assistive tech as a combobox (aria-controls/expanded/activedescendant)
      linked to the listbox. */
   var HISTORY_LIMIT = 20;
   var history = [];       /* normalized URLs, most recent first */
@@ -539,12 +550,32 @@
   }
   function renderHistoryMenu() {
     historyMenu.textContent = '';
+    /* Row 0 is always the "Abrir este URL…" action: it opens the typed text
+       as a URL, not a history entry. It is the default highlight, so Enter
+       opens what was typed even when that URL is a substring of an older
+       entry (e.g. "example.com" typed after "subdomain.example.com" would
+       otherwise only reach the old URL). */
+    var action = document.createElement('div');
+    action.id = 'urlHistory-item-0';   /* stable ID for aria-activedescendant */
+    action.className = 'url-history-item url-history-action' +
+                       (historyIndex === 0 ? ' active' : '');
+    action.setAttribute('role', 'option');
+    if (historyIndex === 0) { action.setAttribute('aria-selected', 'true'); }
+    action.textContent = 'Abrir este URL…';
+    /* mousedown (not click): the input must not lose focus first, and
+       preventDefault keeps focus so blur never races the selection */
+    action.addEventListener('mousedown', function (ev) {
+      ev.preventDefault();
+      openUrl();
+    });
+    historyMenu.appendChild(action);
     matches.forEach(function (url, i) {
+      var row = i + 1;   /* history rows follow the action row */
       var el = document.createElement('div');
-      el.id = 'urlHistory-item-' + i;   /* stable ID for aria-activedescendant */
-      el.className = 'url-history-item' + (i === historyIndex ? ' active' : '');
+      el.id = 'urlHistory-item-' + row;   /* stable ID for aria-activedescendant */
+      el.className = 'url-history-item' + (historyIndex === row ? ' active' : '');
       el.setAttribute('role', 'option');
-      if (i === historyIndex) { el.setAttribute('aria-selected', 'true'); }
+      if (historyIndex === row) { el.setAttribute('aria-selected', 'true'); }
       el.textContent = stripScheme(url);
       /* mousedown (not click): the input must not lose focus first, and
          preventDefault keeps focus so blur never races the selection */
@@ -555,13 +586,14 @@
       historyMenu.appendChild(el);
     });
     /* keep the combobox's active descendant in sync with the highlight */
-    if (historyIndex >= 0 && historyIndex < matches.length) {
+    if (historyIndex >= 0 && historyIndex <= matches.length) {
       input.setAttribute('aria-activedescendant', 'urlHistory-item-' + historyIndex);
     }
   }
   function moveHistoryIndex(delta) {
     if (matches.length === 0) return;
-    historyIndex = (historyIndex + delta + matches.length) % matches.length;
+    var rows = matches.length + 1;   /* action row + one per history entry */
+    historyIndex = (historyIndex + delta + rows) % rows;
     renderHistoryMenu();
     var items = historyMenu.children || [];
     if (items[historyIndex] && items[historyIndex].scrollIntoView) {
@@ -572,6 +604,18 @@
     launchUrl(url);
     input.value = '';
     hideHistoryMenu();
+  }
+  /* `d` on a highlighted history entry removes it (the "Abrir este URL…"
+     action row is not an entry and is never deletable). Saved through the
+     same save() path as recordHistory, so the removal syncs across devices
+     like any other history edit. The dropdown re-renders; with no matches
+     left it closes. */
+  function deleteHistory(url) {
+    var idx = history.indexOf(url);
+    if (idx === -1) return;
+    history.splice(idx, 1);
+    save('start.history', JSON.stringify(history));
+    updateHistoryMenu();
   }
   function hideHistoryMenu() {
     historyMenu.hidden = true;
@@ -590,7 +634,7 @@
        implies focus, but the pull hook can call this at any time (user
        clicked away, text still in the bar) — never pop the menu open then. */
     if (document.activeElement !== input) { hideHistoryMenu(); return; }
-    historyIndex = 0;   /* first match highlighted: Enter opens it */
+    historyIndex = 0;   /* action row highlighted: Enter opens the typed URL */
     historyMenu.hidden = false;
     input.setAttribute('aria-expanded', 'true');
     renderHistoryMenu();
@@ -1309,12 +1353,28 @@
      url/search/settings the digits type into the bar normally. */
   input.addEventListener('keydown', function (e) {
     /* url mode with the history dropdown open: arrows move the highlight,
-       Enter opens the highlighted entry, Escape closes the menu. */
+       Enter opens the highlighted row (row 0 = "Abrir este URL…" opens the
+       typed text), `d` deletes a highlighted history entry, Escape closes
+       the menu. */
     if (mode === 'url' && !historyMenu.hidden) {
       if (e.key === 'ArrowDown') { e.preventDefault(); moveHistoryIndex(1); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); moveHistoryIndex(-1); return; }
       if (e.key === 'Enter') {
-        if (matches[historyIndex]) { e.preventDefault(); selectHistory(matches[historyIndex]); }
+        /* Row 0 is the "Abrir este URL…" action; any other highlighted row
+           is a history entry. */
+        if (historyIndex === 0) { e.preventDefault(); openUrl(); }
+        else if (matches[historyIndex - 1]) { e.preventDefault(); selectHistory(matches[historyIndex - 1]); }
+        return;
+      }
+      if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+        /* delete the highlighted history entry; on the action row the key
+           types into the bar normally (filtering the list). Modifier
+           combos (Ctrl+D bookmark, Alt+D address bar) and held-key
+           repeats are never hijacked. */
+        if (historyIndex > 0 && matches[historyIndex - 1]) {
+          e.preventDefault();
+          deleteHistory(matches[historyIndex - 1]);
+        }
         return;
       }
       if (e.key === 'Escape') { e.preventDefault(); hideHistoryMenu(); return; }
