@@ -385,6 +385,22 @@ test('d deletes the highlighted history entry and re-renders the dropdown', asyn
   await expect(page.locator('#q')).toHaveJSProperty('value', 'example.org');
 });
 
+test('modified d (Ctrl+D) does not delete the highlighted history entry', async ({ page }) => {
+  await page.goto('/');
+
+  await typeInBar(page, 'git');
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(2);
+  await page.keyboard.press('ArrowDown');   /* highlight github.com/lqh-2011 */
+  await page.keyboard.press('Control+d');   /* browser bookmark shortcut */
+
+  /* the entry survives and the dropdown is untouched */
+  const history = await page.evaluate(() => JSON.parse(localStorage.getItem('start.history')));
+  expect(history).toContain('https://github.com/lqh-2011');
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(2);
+  await expect(page.locator('#urlHistory .url-history-item').nth(1)).toHaveText('github.com/lqh-2011');
+  expect(await opened(page)).toEqual([]);
+});
+
 test('history dropdown never opens in search mode', async ({ page }) => {
   await page.goto('/');
 

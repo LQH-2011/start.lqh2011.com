@@ -1366,9 +1366,11 @@
         else if (matches[historyIndex - 1]) { e.preventDefault(); selectHistory(matches[historyIndex - 1]); }
         return;
       }
-      if (e.key === 'd' || e.key === 'D') {
+      if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
         /* delete the highlighted history entry; on the action row the key
-           types into the bar normally (filtering the list) */
+           types into the bar normally (filtering the list). Modifier
+           combos (Ctrl+D bookmark, Alt+D address bar) and held-key
+           repeats are never hijacked. */
         if (historyIndex > 0 && matches[historyIndex - 1]) {
           e.preventDefault();
           deleteHistory(matches[historyIndex - 1]);
