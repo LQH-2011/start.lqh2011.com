@@ -412,6 +412,25 @@
     applyTheme(next);
   }
 
+  /* `f` in command mode: toggle the Fullscreen API on the whole page. A
+     no-op when the API is missing or the request is rejected (no user
+     activation, iframe permission, …) — nothing breaks, command mode stays. */
+  function toggleFullscreen() {
+    var p;
+    if (document.fullscreenElement) {
+      try { p = document.exitFullscreen(); } catch (err) { return; }
+    } else if (document.documentElement.requestFullscreen) {
+      try { p = document.documentElement.requestFullscreen(); } catch (err) { return; }
+    } else {
+      return;
+    }
+    /* both calls return promises that can also reject asynchronously (e.g.
+       an AbortError when a request is superseded) — swallow the rejection
+       so no unhandled rejection hits the console; the toggle no-ops on
+       failure either way. */
+    if (p && typeof p.catch === 'function') { p.catch(function () {}); }
+  }
+
   /* ---------- engines ---------- */
   function setEngine(name) {
     engine = name;
@@ -424,7 +443,7 @@
   /* ---------- modes ---------- */
   /* url (://) — type a URL, Enter opens it in a new tab (default)
      search (magnifier) — engine search, Enter opens results in a new tab
-     command (❯) — a/b/c/k/p/r/s/t/u/h/x + 1-9 quick links
+     command (❯) — a/b/c/f/k/p/r/s/t/u/h/x + 1-9 quick links
      settings (gear) — b/g/d/w/f/e engines, c/k toggles, l links, x logout
      links (gear) — bookmarks: 1-9 open, a add, e edit, x delete
      timer — countdown/count-up value entry
@@ -1264,7 +1283,8 @@
 
   /* ---------- sub-mode key handling ---------- */
   /* Any mode: typing "aaa" (or "/" or "-") enters command mode.
-     Command mode: a=Abrir (url top), b=Buscar (search top), c=clock, k=theme,
+     Command mode: a=Abrir (url top), b=Buscar (search top), c=clock,
+     f=fullscreen, k=theme,
      p=pull from DB (no reload), s (or "/" or "-" again) = settings, t=timer,
      u=count-up, h=hours, x=stop,
      r=reload. Settings mode: b/g/d/w/f/e engines, c/k toggles, l=links,
@@ -1278,6 +1298,7 @@
     if (c === 'a')      { selectTop('url'); }
     else if (c === 'b') { selectTop('search'); }
     else if (c === 'c') { toggleClock(); input.value = ''; }
+    else if (c === 'f') { toggleFullscreen(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
     else if (c === 'p') { pullFromServer(); input.value = ''; }
     else if (c === 'r') { saveSession('start.activeMode', 'command'); location.reload(); }

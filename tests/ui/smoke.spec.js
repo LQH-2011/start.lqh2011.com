@@ -93,6 +93,26 @@ test('aaa enters command mode; k toggles theme and stays in command mode', async
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('light');
 });
 
+/* ---------- command mode / fullscreen ---------- */
+
+test('f toggles fullscreen and stays in command mode', async ({ page }) => {
+  await page.goto('/');
+
+  await typeInBar(page, 'aaa');
+  await expect(page.locator('#cmdIndicator')).toBeVisible();
+
+  /* Real keyboard input (trusted events): the Fullscreen API requires
+     transient user activation, which the synthetic input event from
+     typeInBar() does not provide. */
+  await page.keyboard.type('f');
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Comando…');
+
+  await page.keyboard.type('f');
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Comando…');
+});
+
 /* ---------- theme: system detection + device-specific pref ---------- */
 
 /* Fresh context with a given OS color scheme, seeded like the default

@@ -55,6 +55,8 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `b` — **Buscar**: back to the search bar (selected top mode, persisted)
   - `c` — toggle the "LQH-2011" logo and a live HH:MM:SS block-art clock (stays in
     command mode)
+  - `f` — toggle full screen via the browser Fullscreen API (stays in command mode;
+    a no-op where the API is missing or the browser rejects the request)
   - `k` — cycle theme: system → opposite of the OS theme → other explicit theme → system (stays in command mode)
   - `p` — **Pull**: fetch the latest synced settings from the DB and apply
     them live — bookmarks, history, engine, top mode, clock and timer
