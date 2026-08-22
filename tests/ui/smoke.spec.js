@@ -624,34 +624,39 @@ test('timers: digits 1-9 select the Nth timer in the manager (1 = first)', async
 
 test('timers: arrow keys move the highlight AND show the selected timer (matches digit selection)', async ({ page }) => {
   await page.goto('/');
+  /* idle countdowns => deterministic display (the configured dur), so the logo
+     check proves the arrows bound the exact timer, not just any MM:SS value. */
   await seedTimers(page, [
-    runningDown('t1', 'One', 600),
-    runningUp('t2', 'Two'),
-    runningDown('t3', 'Three', 1200)
+    { id: 't1', name: 'One', kind: 'down', dur: 10 * 60, end: null, start: null, paused: null },
+    { id: 't2', name: 'Two', kind: 'down', dur: 25 * 60, end: null, start: null, paused: null },
+    { id: 't3', name: 'Three', kind: 'down', dur: 5 * 60, end: null, start: null, paused: null }
   ], { active: 't1', visible: true });
 
   await typeInBar(page, 'aaa');
   await typeInBar(page, 't');
   await expect(page.locator('#timerList')).toBeVisible();
 
-  /* highlight starts on the active timer (t1) */
+  /* highlight starts on the active timer (t1 -> 10:00) */
   await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText('One');
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '10:00');
   expect(await activeTimerId(page)).toBe('t1');
 
-  /* ArrowDown moves to the 2nd timer and binds it to the display slot */
+  /* ArrowDown moves to the 2nd timer (25:00) and binds it to the display slot */
   await page.keyboard.press('ArrowDown');
   expect(await activeTimerId(page)).toBe('t2');
-  await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}$/);
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '25:00');
   await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText('Two');
 
-  /* ArrowDown again -> 3rd timer */
+  /* ArrowDown again -> 3rd timer (05:00) */
   await page.keyboard.press('ArrowDown');
   expect(await activeTimerId(page)).toBe('t3');
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '05:00');
   await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText('Three');
 
-  /* ArrowUp goes back to the 2nd timer and re-binds the slot */
+  /* ArrowUp goes back to the 2nd timer (25:00) and re-binds the slot */
   await page.keyboard.press('ArrowUp');
   expect(await activeTimerId(page)).toBe('t2');
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '25:00');
   await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText('Two');
 });
 
