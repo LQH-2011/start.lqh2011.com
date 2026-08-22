@@ -58,6 +58,55 @@ async function logoLabel(page) {
   return page.locator('#logo').getAttribute('aria-label');
 }
 
+async function timers(page) {
+  return page.evaluate(() => JSON.parse(localStorage.getItem('start.timers') || '[]'));
+}
+async function activeTimerId(page) {
+  return page.evaluate(() => localStorage.getItem('start.timerActive'));
+}
+
+/* Build a running countdown / count-up record for seeding. */
+function runningDown(id, name, dur) {
+  return { id, name, kind: 'down', dur, end: Date.now() + dur * 1000, start: null, paused: null };
+}
+function runningUp(id, name) {
+  return { id, name, kind: 'up', dur: null, end: null, start: Date.now(), paused: null };
+}
+/* Persist a timer list (+ which timer owns the slot / its visibility) into
+   localStorage, then reload so the page restores it — a deterministic way to
+   seed state without driving the mode machine. */
+async function seedTimers(page, timers, opts = {}) {
+  await page.evaluate(({ t, active, visible }) => {
+    localStorage.setItem('start.timers', JSON.stringify(t));
+    if (active) localStorage.setItem('start.timerActive', active);
+    if (visible !== undefined) localStorage.setItem('start.timerVisible', visible ? '1' : '0');
+  }, { t: timers, active: opts.active, visible: opts.visible });
+  await page.reload();
+}
+/* Climb the timers manager up one layer (timers -> settings -> command). */
+async function backToCommand(page) {
+  await page.locator('#q').focus();
+  await page.keyboard.press('Backspace');   /* timers -> settings */
+  await page.keyboard.press('Backspace');   /* settings -> command */
+}
+/* Add a named timer via the manager (command `t` -> `a` -> name -> kind -> dur).
+   Assume the bar is already in command mode; the flow ends in timers mode with
+   the new timer highlighted. `start` presses `y` so the timer is RUNNING. */
+async function addTimer(page, { name = 'Temporizador', kind = 'down', dur = '25', start = false }) {
+  await typeInBar(page, 't');       /* timers manager */
+  await typeInBar(page, 'a');       /* add flow */
+  await typeInBar(page, name);
+  await page.keyboard.press('Enter');          /* commit name */
+  await typeInBar(page, kind === 'up' ? 'u' : 'd');
+  await page.keyboard.press('Enter');          /* commit kind */
+  if (kind === 'down') {
+    await typeInBar(page, dur);
+    await page.keyboard.press('Enter');        /* commit duration */
+  }
+  if (start) { await typeInBar(page, 'y'); }   /* start the new (highlighted) timer */
+  return timers(page);
+}
+
 /* ---------- load / default state ---------- */
 
 test('loads logged-in in default url mode with seeded bookmarks', async ({ page }) => {
@@ -434,59 +483,71 @@ test('history dropdown never opens in search mode', async ({ page }) => {
 
 /* ---------- timer ---------- */
 
-test('timer: countdown starts, stops with x, count-up runs', async ({ page }) => {
+test('timer: command t opens the manager; z pauses/resumes, r resets, x deletes (confirm)', async ({ page }) => {
   await page.goto('/');
+  await seedTimers(page, [runningDown('t1', 'Pomodoro', 1500)], { active: 't1', visible: true });
 
+  /* command mode: `t` opens the timers manager (not a countdown value prompt) */
   await typeInBar(page, 'aaa');
   await typeInBar(page, 't');
-  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Temporizador');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Temporizadores…');
+  await expect(page.locator('#timerIcon')).toBeVisible();
+  await expect(page.locator('#timerList')).toBeVisible();
 
-  /* invalid input exits timer mode back to the top */
-  await typeInBar(page, 'abc');
-  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Abrir URL…');
+  /* back out to command mode (timers -> settings -> command) */
+  await backToCommand(page);
 
-  /* valid countdown: 25 -> 25 minutes, display replaces the logo */
-  await typeInBar(page, 'aaa');
-  await typeInBar(page, 't');
-  await typeInBar(page, '25');
+  /* z pauses: the timer freezes at its current value */
+  await typeInBar(page, 'z');
+  let list = await timers(page);
+  expect(list[0].paused).not.toBeNull();
+  const pausedSecs = list[0].paused.secs;
+  expect(pausedSecs).toBeGreaterThan(0);
+  expect(list[0].end).toBeNull();
+  expect(list[0].start).toBeNull();
+
+  /* z again resumes from where it paused — NOT a reset */
+  await typeInBar(page, 'z');
+  list = await timers(page);
+  expect(list[0].paused).toBeNull();
+  expect(list[0].end).toBeGreaterThan(Date.now());
+  const remaining = Math.round((list[0].end - Date.now()) / 1000);
+  expect(Math.abs(remaining - pausedSecs)).toBeLessThan(10);
+
+  /* r resets back to the configured duration (idle) */
+  await typeInBar(page, 'r');
+  list = await timers(page);
+  expect(list[0].end).toBeNull();
+  expect(list[0].start).toBeNull();
+  expect(list[0].paused).toBeNull();
+  expect(await page.locator('#logo')).toHaveAttribute('aria-label', '25:00');
+
+  /* x deletes the active timer (confirm s/y) and restores the logo */
+  await typeInBar(page, 'x');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', '¿Borrar? (s/n)');
+  await typeInBar(page, 's');
   await page.keyboard.press('Enter');
-  await expect.poll(() => logoLabel(page)).toMatch(/^\d{2}:\d{2}$/);
-  const timer = await page.evaluate(() => JSON.parse(localStorage.getItem('start.timer')));
-  expect(timer.kind).toBe('down');
-  expect(timer.end).toBeGreaterThan(Date.now());
-
-  /* x stops it: logo back, storage cleared (countdown commit exited to url,
-     so re-enter command mode first) */
-  await typeInBar(page, 'aaa');
-  await typeInBar(page, 'x');
-  await expect(page.locator('#logo')).toHaveAttribute('aria-label', 'LQH-2011');
-  expect(await page.evaluate(() => localStorage.getItem('start.timer'))).toBeNull();
-
-  /* count-up from 00:00 — x left us in command mode, so u works directly */
-  await typeInBar(page, 'u');
-  await expect.poll(() => logoLabel(page)).toMatch(/^\d{2}:\d{2}$/);
-  await page.waitForTimeout(1500);
-  expect(await logoLabel(page)).not.toBe('00:00');
-  await typeInBar(page, 'x');
+  expect(await timers(page)).toHaveLength(0);
+  expect(await activeTimerId(page)).toBeNull();
   await expect(page.locator('#logo')).toHaveAttribute('aria-label', 'LQH-2011');
 });
 
-test('timer: finished countdown flashes, flips to count-up, then settles', async ({ page }) => {
+test('timer: finished countdown flashes, flips to count-up (stays kind down), then settles', async ({ page }) => {
   await page.goto('/');
 
   /* 1-second countdown (0:01) so the elapse happens fast */
   await typeInBar(page, 'aaa');
-  await typeInBar(page, 't');
-  await typeInBar(page, '0:01');
-  await page.keyboard.press('Enter');
-  const end = (await page.evaluate(() => JSON.parse(localStorage.getItem('start.timer')))).end;
+  await addTimer(page, { name: 'Temporizador', kind: 'down', dur: '0:01' });
+  await typeInBar(page, 'y');   /* start it (highlighted) so the elapse happens */
+  const end = (await timers(page))[0].end;
   expect(end).toBeGreaterThan(Date.now());
 
-  /* after the elapse: the record flipped to a count-up anchored at the end
-     time and the logo is flashing */
+  /* after the elapse: the countdown clears `end` and sets `start` to its end
+     time (still kind='down'), and the logo is flashing */
   await page.waitForTimeout(1600);
-  const flipped = await page.evaluate(() => JSON.parse(localStorage.getItem('start.timer')));
-  expect(flipped.kind).toBe('up');
+  const flipped = (await timers(page))[0];
+  expect(flipped.kind).toBe('down');
+  expect(flipped.end).toBeNull();
   expect(flipped.start).toBe(end);
   expect(await page.evaluate(
     () => document.getElementById('logo').classList.contains('timer-flash')
@@ -504,11 +565,279 @@ test('timer: finished countdown flashes, flips to count-up, then settles', async
   await page.waitForTimeout(1200);
   expect(await logoLabel(page)).not.toBe(settled);
 
-  /* x stops it: logo back, storage cleared */
-  await typeInBar(page, 'aaa');
+  /* x deletes the finished timer (confirm s/y) — back to command mode first */
+  await backToCommand(page);
   await typeInBar(page, 'x');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', '¿Borrar? (s/n)');
+  await typeInBar(page, 's');
+  await page.keyboard.press('Enter');
+  expect(await timers(page)).toHaveLength(0);
+});
+
+/* ---------- timers manager ---------- */
+
+test('timers manager: settings -> t shows a dropdown of timers (name, kind, live time)', async ({ page }) => {
+  await page.goto('/');
+  /* seed a running countdown and a running count-up */
+  await seedTimers(page, [runningDown('t1', 'Pomodoro', 1500), runningUp('t2', 'Deep work')],
+    { active: 't2', visible: true });
+
+  /* command mode -> settings -> timers */
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+
+  await expect(page.locator('#timerList')).toBeVisible();
+  await expect(page.locator('#timerList .timer-row')).toHaveCount(2);
+  /* each row shows name + kind badge + a live time */
+  const row0 = page.locator('#timerList .timer-row').nth(0);
+  await expect(row0.locator('.timer-name')).toHaveText('Pomodoro');
+  await expect(row0.locator('.timer-kind')).toHaveText('DOWN');
+  await expect(row0.locator('.timer-time')).toHaveText(/^\d{2}:\d{2}$/);
+  const row1 = page.locator('#timerList .timer-row').nth(1);
+  await expect(row1.locator('.timer-name')).toHaveText('Deep work');
+  await expect(row1.locator('.timer-kind')).toHaveText('UP');
+  await expect(row1.locator('.timer-time')).toHaveText(/^\d{2}:\d{2}$/);
+});
+
+test('timers: digits 1-9 select the Nth timer in the manager (1 = first)', async ({ page }) => {
+  await page.goto('/');
+  await seedTimers(page, [
+    runningDown('t1', 'One', 600),
+    runningUp('t2', 'Two'),
+    runningDown('t3', 'Three', 1200)
+  ], { active: 't1', visible: true });
+
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 't');
+  await expect(page.locator('#timerList')).toBeVisible();
+
+  /* `2` selects the second timer (the count-up) */
+  await typeInBar(page, '2');
+  expect(await activeTimerId(page)).toBe('t2');
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}$/);
+  /* `3` selects the third, and the highlight follows */
+  await typeInBar(page, '3');
+  expect(await activeTimerId(page)).toBe('t3');
+  await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText('Three');
+});
+
+test('timers manager: settings -> t, add a named countdown', async ({ page }) => {
+  await page.goto('/');
+
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Temporizadores…');
+
+  await typeInBar(page, 'a');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Nombre del temporizador…');
+  await typeInBar(page, 'Pomodoro');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Tipo (u = cuenta arriba, d = cuenta atrás)…');
+  await typeInBar(page, 'd');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Duración (ej. 25, 05:00, 1:30:00)…');
+  await typeInBar(page, '25');
+  await page.keyboard.press('Enter');
+
+  const list = await timers(page);
+  expect(list).toHaveLength(1);
+  expect(list[0].name).toBe('Pomodoro');
+  expect(list[0].kind).toBe('down');
+  expect(list[0].dur).toBe(25 * 60);
+  expect(await activeTimerId(page)).toBe(list[0].id);
+  /* the new timer owns the slot and shows its configured 25:00 */
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '25:00');
+  /* and it appears in the dropdown */
+  await expect(page.locator('#timerList .timer-row')).toHaveCount(1);
+  await expect(page.locator('#timerList .timer-name').first()).toHaveText('Pomodoro');
+  await expect(page.locator('#timerList .timer-kind').first()).toHaveText('DOWN');
+  await expect(page.locator('#timerList .timer-time').first()).toHaveText('25:00');
+});
+
+test('timers manager: add a named count-up (shows 00:00 when idle)', async ({ page }) => {
+  await page.goto('/');
+
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+  await typeInBar(page, 'a');
+  await typeInBar(page, 'Deep work');
+  await page.keyboard.press('Enter');
+  await typeInBar(page, 'u');
+  await page.keyboard.press('Enter');
+
+  const list = await timers(page);
+  expect(list).toHaveLength(1);
+  expect(list[0].name).toBe('Deep work');
+  expect(list[0].kind).toBe('up');
+  expect(list[0].start).toBeNull();
+  /* idle count-up shows 00:00 */
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '00:00');
+  await expect(page.locator('#timerList .timer-kind').first()).toHaveText('UP');
+  await expect(page.locator('#timerList .timer-time').first()).toHaveText('00:00');
+});
+
+test('timers manager: rename the highlighted timer (e -> name -> Enter -> Enter)', async ({ page }) => {
+  await page.goto('/');
+
+  /* seed one countdown (idle -> shows 25:00) and open the manager */
+  await seedTimers(page, [{ id: 't1', name: 'Temporizador', kind: 'down', dur: 25 * 60, end: null, start: null, paused: null }],
+    { active: 't1', visible: true });
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+
+  /* the single timer is highlighted (index 0); `e` renames it directly */
+  await typeInBar(page, 'e');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Nombre (Enter = dejar igual)…');
+  await typeInBar(page, 'Pomodoro');
+  await page.keyboard.press('Enter');   /* commit name -> dur step */
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Duración (Enter = dejar igual)…');
+  await page.keyboard.press('Enter');   /* commit dur (kept) */
+
+  const list = await timers(page);
+  expect(list[0].name).toBe('Pomodoro');
+  expect(list[0].dur).toBe(25 * 60);
+  /* the dropdown reflects the rename */
+  await expect(page.locator('#timerList .timer-name').first()).toHaveText('Pomodoro');
+});
+
+test('timers manager: delete the highlighted timer (x -> s) restores the logo', async ({ page }) => {
+  await page.goto('/');
+
+  /* seed one countdown (it is active + shown) and open the manager */
+  await seedTimers(page, [{ id: 't1', name: 'Temporizador', kind: 'down', dur: 25 * 60, end: Date.now() + 1500 * 1000, start: null, paused: null }],
+    { active: 't1', visible: true });
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+
+  await typeInBar(page, 'x');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', '¿Borrar? (s/n)');
+  await typeInBar(page, 's');
+  await page.keyboard.press('Enter');
+
+  expect(await timers(page)).toHaveLength(0);
+  /* the deleted timer was active -> logo restored */
   await expect(page.locator('#logo')).toHaveAttribute('aria-label', 'LQH-2011');
+  /* empty list -> dropdown hidden */
+  await expect(page.locator('#timerList')).toBeHidden();
+});
+
+test('timers manager: z pauses/resumes, r resets the highlighted timer', async ({ page }) => {
+  await page.goto('/');
+
+  /* seed one running countdown and open the manager */
+  await seedTimers(page, [runningDown('t1', 'Temporizador', 1500)], { active: 't1', visible: true });
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+
+  /* z pauses the highlighted timer (freezes the value) */
+  await typeInBar(page, 'z');
+  let list = await timers(page);
+  expect(list[0].paused).not.toBeNull();
+  /* the dropdown row shows the frozen value (not ticking) */
+  await expect(page.locator('#timerList .timer-time').first()).toHaveText(/^\d{2}:\d{2}$/);
+
+  /* z again resumes (continues from where it paused) */
+  await typeInBar(page, 'z');
+  list = await timers(page);
+  expect(list[0].paused).toBeNull();
+  expect(list[0].end).toBeGreaterThan(Date.now());
+
+  /* r resets to the configured duration (idle) */
+  await typeInBar(page, 'r');
+  list = await timers(page);
+  expect(list[0].end).toBeNull();
+  expect(list[0].paused).toBeNull();
+  await expect(page.locator('#timerList .timer-time').first()).toHaveText('25:00');
+});
+
+test('timers: two timers run concurrently; a digit selects one and switches the display', async ({ page }) => {
+  await page.goto('/');
+  /* seed a running countdown + a running count-up; the count-up owns the slot */
+  await seedTimers(page, [runningDown('t1', 'Pomodoro', 300), runningUp('t2', 'Deep work')],
+    { active: 't2', visible: true });
+
+  let list = await timers(page);
+  expect(list).toHaveLength(2);
+  expect(list[0].kind).toBe('down');
+  expect(list[1].kind).toBe('up');
+  /* both running independently */
+  expect(list[0].end).toBeGreaterThan(Date.now());
+  expect(list[1].start).toBeGreaterThan(0);
+  /* the count-up is currently shown */
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}$/);
+
+  /* open the manager and press `1` to select the countdown (first in the list) */
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 't');
+  await typeInBar(page, '1');
+  expect(await activeTimerId(page)).toBe(list[0].id);
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}$/);
+
+  /* the count-up keeps running in the background */
+  list = await timers(page);
+  expect(list[1].start).toBeGreaterThan(0);
+});
+
+test('timer: a running countdown resumes after a reload (and never flashes the logo)', async ({ page }) => {
+  await page.goto('/');
+
+  /* seed a running countdown straight into localStorage, then reload */
+  const end = Date.now() + 300 * 1000;
+  await page.evaluate((e) => {
+    localStorage.setItem('start.timers', JSON.stringify([{ id: 't1', name: 'Temporizador', kind: 'down', dur: 300, end: e, start: null, paused: null }]));
+    localStorage.setItem('start.timerActive', 't1');
+    localStorage.setItem('start.timerVisible', '1');
+  }, end);
+  await page.reload();
+
+  const after = (await timers(page))[0];
+  expect(after.id).toBe('t1');
+  expect(after.end).toBe(end);
+  /* it owns the display slot immediately — the label is the timer, not the logo */
+  expect(await activeTimerId(page)).toBe('t1');
+  const label = await logoLabel(page);
+  expect(label).toMatch(/^\d{2}:\d{2}$/);
+  expect(label).not.toBe('LQH-2011');
+});
+
+test('timer: the h hours preference survives a reload', async ({ page }) => {
+  await page.goto('/');
+
+  /* seed a running 25-min countdown (shows MM:SS by default) */
+  await seedTimers(page, [runningDown('t1', 'Temporizador', 1500)], { active: 't1', visible: true });
+  /* toggle h (command mode) -> HH:MM:SS display */
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 'h');
+  await page.reload();
+
+  /* hoursOn is restored -> the countdown shows HH:MM:SS */
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}:\d{2}$/);
+});
+
+test('timer: the old single-timer record migrates into the named list', async ({ browser }) => {
+  const ctx = await browser.newContext({ baseURL: 'http://127.0.0.1:8123' });
+  await ctx.addInitScript(SEED);
+  await ctx.addInitScript(() => {
+    localStorage.setItem('start.timer', JSON.stringify({
+      kind: 'down', end: Date.now() + 60000, hours: false, visible: true
+    }));
+  });
+  const page = await ctx.newPage();
+  await page.goto('/');
+
+  const list = await timers(page);
+  expect(list).toHaveLength(1);
+  expect(list[0].kind).toBe('down');
+  expect(list[0].end).toBeGreaterThan(Date.now());
   expect(await page.evaluate(() => localStorage.getItem('start.timer'))).toBeNull();
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}$/);
+  await ctx.close();
 });
 
 /* ---------- mode stack ---------- */
@@ -601,20 +930,57 @@ test('digit keys open pinned links when the bar is not focused and in command mo
   expect(await opened(page)).toEqual(['https://github.com', 'https://github.com']);
 });
 
+test('global z/r/x act on the active timer when the bar is not focused', async ({ page }) => {
+  await page.goto('/');
+
+  /* seed a running countdown */
+  await seedTimers(page, [runningDown('t1', 'Temporizador', 1500)], { active: 't1', visible: true });
+
+  /* blur the bar so the document-level shortcuts fire */
+  await page.evaluate(() => document.activeElement.blur());
+
+  /* global z pauses the active timer (brings it forward + freezes) */
+  await page.keyboard.press('z');
+  let list = await timers(page);
+  expect(list[0].paused).not.toBeNull();
+
+  /* global z resumes */
+  await page.keyboard.press('z');
+  list = await timers(page);
+  expect(list[0].paused).toBeNull();
+  expect(list[0].end).toBeGreaterThan(Date.now());
+
+  /* global r resets to the configured duration */
+  await page.keyboard.press('r');
+  list = await timers(page);
+  expect(list[0].end).toBeNull();
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '25:00');
+
+  /* global x deletes the active timer (confirm s/y) */
+  await page.keyboard.press('x');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', '¿Borrar? (s/n)');
+  await typeInBar(page, 's');
+  await page.keyboard.press('Enter');
+  expect(await timers(page)).toHaveLength(0);
+});
+
+
 /* ---------- reload handshake (regression: submode restore + listeners) ---------- */
 
-test('r reloads into command mode and the page stays interactive', async ({ page }) => {
+test('r reloads into links mode (links/r) and the page stays interactive', async ({ page }) => {
   await page.goto('/');
 
   await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 'l');
   const loaded = page.waitForEvent('load');
   await typeInBar(page, 'r').catch(() => { /* reload may race the evaluate */ });
   await loaded;
 
-  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Comando…');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Favoritos…');
   /* listeners must be registered after the restored-submode load */
   await typeInBar(page, 'a');
-  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Abrir URL…');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'URL del favorito…');
 });
 
 /* ---------- p command with the API down ---------- */

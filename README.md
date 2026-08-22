@@ -61,17 +61,19 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `p` — **Pull**: fetch the latest synced settings from the DB and apply
     them live — bookmarks, history, engine, top mode, clock and timer
     change in place, no page reload (stays in command mode)
-  - `r` — refresh the page (stays in command mode)
   - `s` — **Settings**: open the settings mode (gear indicator); typing `/` or
     `-` again in command mode does the same
-  - `t` — **Timer**: set a countdown (timer indicator; type the duration, Enter
-    starts it); when a timer is already running, `t` brings its display back
-    instead of setting a new one
-  - `u` — start a count-up from `00:00` (stays in command mode)
+  - `t` — **Timers**: open the named-timers manager (timer indicator)
+  - `u` — start a quick count-up from `00:00` (creates a new named timer)
+  - `y` — start the active timer (a countdown restarts from its saved
+    duration, a count-up from `00:00`); this clears a paused timer
   - `h` — toggle hours (`MM:SS` ↔ `HH:MM:SS`) for the active timer (stays in
     command mode)
-  - `x` — stop the timer and restore the logo (or the clock if it was on)
-    (stays in command mode)
+  - `z` — **pause/resume** the active timer: a running timer freezes at its
+    current value, and `z` again resumes from where it stopped (not a reset)
+  - `r` — **reset** the active timer to its initial state (a countdown back to
+    its configured duration, a count-up to `00:00`)
+  - `x` — **delete** the active timer (confirm `s`/`y`)
   Any other character exits command mode and keeps the text as-is in the selected top
   mode; Enter on an empty prompt returns to the top, and Backspace (on an empty prompt)
   or Escape climb one level up.
@@ -86,12 +88,15 @@ Personal browser start page — minimalist, in the same style as the blog.
     the query goes in the URL path)
   - `c` / `k` — same toggles as in command mode (stay in settings)
   - `l` — **Favoritos**: open the links/bookmarks submenu
+  - `t` — **Temporizadores**: open the timers submenu — a visible dropdown of the
+    named timers (name, UP/DOWN, live time) to select, start, pause/resume, reset,
+    rename or delete
   - `x` — **Cerrar sesión** (logout): type `s` (or `y`) and press **Enter**
     to wipe `localStorage` and `sessionStorage` — sync token, settings and
     bookmarks — and reload the page, so the password overlay returns; type
     any other response and press Enter, or press Escape or Backspace on an
     empty prompt, to cancel back to settings
-  - `r` — refresh the page (stays in settings)
+  - `r` — reset the active timer to its initial state (stays in settings)
   Engine keys exit settings back to the search bar with the new engine, and make
   the search bar the selected top mode (so backspace/Enter return to it). Backspace
   on an empty prompt goes one layer up (settings → command); Enter returns straight
@@ -109,7 +114,8 @@ Personal browser start page — minimalist, in the same style as the blog.
     the current values are pre-filled, and Enter on an empty field keeps them
   - `x` — **Borrar**: press the bookmark number, then confirm with `s` (or `y` —
     any other key cancels)
-  - `c` / `k` / `r` — same toggles/refresh as in settings
+  - `c` / `k` — same toggles as in settings; `r` — refresh/reload (links mode keeps
+    the page reload, unlike the other submodes where `r` resets the active timer)
   Backspace on an empty prompt cancels a flow and climbs one level (links →
   settings → command); Escape cancels a flow or climbs the same stack mid-typing;
   with no flow active, Enter on an empty prompt exits to the top (during a flow
@@ -120,8 +126,11 @@ Personal browser start page — minimalist, in the same style as the blog.
   - `a` — refocus the url/search bar, keeping the current top mode
   - `/` or `-` — enter command mode directly
   - `s` — open settings mode directly
-  - `t` — show the running timer (focus stays where it is); with no timer, enter
-    timer setup and focus the bar
+  - `t` — show the active timer (focus stays where it is); with no active timer,
+    enter timer setup and focus the bar
+  - `z` — pause/resume the active timer (focus stays where it is)
+  - `r` — reset the active timer (focus stays where it is)
+  - `x` — delete the active timer (confirm `s`/`y`; enters command mode for the prompt)
   - `c` — toggle the block-art clock (focus stays where it is)
   - `k` — cycle theme: system → opposite of the OS theme → other explicit theme → system (focus stays where it is)
   Modifier combos (`Ctrl+…`, `Cmd+…`, `Alt+…`) are never intercepted. While any
@@ -138,27 +147,38 @@ Personal browser start page — minimalist, in the same style as the blog.
   clock in the same 5×7 pixel-block style (digits and colon are glyphs in the same SVG
   `<defs>`; the seconds tick every 1000 ms). Press `c` again to switch back. The choice
   is saved in `localStorage` (`start.clock`, `on`/`off`) and restored on the next load.
-- **Timer**: type `aaa` then `t` to set a **countdown** (the indicator swaps to a timer
-  icon, the placeholder shows the accepted formats). Type the duration and press Enter —
-  three formats are accepted: a plain integer is minutes (`25` = 25 min), `MM:SS`
-  (`05:00`), or `HH:MM:SS` (`1:30:00`). A duration of one hour or more (`60`, `90`, or
-  `90:00`) automatically converts to `HH:MM:SS` (`1:00:00` or `1:30:00`). Type `aaa` then `u` for a **count-up**
-  that starts at `00:00`. The timer replaces the logo at the top in the same block-art
-  style; it shows `MM:SS` by default and `HH:MM:SS` once the duration/elapsed time
-  reaches one hour. `h` (in command mode) toggles the hours display manually; `x` stops
-  the timer and restores the logo (or the block-art clock if it was on). **The timer
-  keeps running in the background**: `c` while a timer is shown hides it and brings back
-  the clock (or `c` again, the logo) without stopping it, and `t` (in command mode or
-  the global shortcut) brings it back — a hidden countdown keeps the correct remaining
-  time, so switching to the clock or logo and coming back resumes right where it was.
-  In timer mode, digits and colons type the value, Enter starts the countdown,
-  Backspace on an empty prompt returns to command mode, and any other character exits
-  keeping the text. The timer survives reloads: its state (absolute end/start
-  timestamps, the hours display, and whether it was on display) is saved in
-  `localStorage` under `start.timer`, so a countdown resumes with the correct remaining
-  time, a count-up keeps counting, a finished countdown stays at `00:00`, and a hidden
-  timer reloads back into the clock/logo view. Stopping it with `x` clears the saved
-  state.
+- **Timers**: the page now has a LIST of named timers, each either a count-up or a
+  count-down, and they can all run at once. One is bound to the logo slot at a time
+  (the others keep counting in the background); the timers manager dropdown shows them
+  all and selects which one is shown.
+  - **Countdown formats**: a plain integer is minutes (`25` = 25 min), `MM:SS` (`05:00`),
+    or `HH:MM:SS` (`1:30:00`). A duration of one hour or more (`60`, `90`, or `90:00`)
+    auto-converts to `HH:MM:SS`. A created timer lands in the named list (default name
+    "Temporizador") and can be renamed from the manager.
+  - **Quick count-up**: type `aaa` then `u` for a count-up that starts at `00:00`.
+  - **Timers manager (`t` in command mode, or settings → `t`)**: a visible dropdown (same
+    design as the URL-opener history dropdown) lists every timer — name, a `UP`/`DOWN`
+    badge and a live `MM:SS`/`HH:MM:SS` reading that **ticks for a running timer** and sits
+    still for a paused/stopped one. `↑`/`↓` move the highlight (wrapping), **Enter** binds
+    the highlighted timer to the display slot, and `1`–`9` select & show that timer by
+    position (1 = first). `a` **Añadir** (name → type: `u`/`d` → duration for a countdown),
+    `e` **Editar** (rename, and the duration for a countdown), `x` **Borrar** (confirm
+    `s`/`y`), `y` **start** the highlighted timer, `z` **pause/resume** it, `r` **reset**
+    it (idle), plus the usual `c`/`k` toggles. An idle countdown shows its configured
+    length (e.g. `25:00`); an idle count-up shows `00:00`.
+  - The timer replaces the logo at the top in the same block-art style; it shows `MM:SS`
+    by default and `HH:MM:SS` once the duration/elapsed time reaches one hour. `h` (in
+    command mode) toggles the hours display manually.
+  - **Background running**: every timer keeps ticking even when its display is hidden —
+    `c` while a timer is shown hides it and brings back the clock (or `c` again, the logo)
+    without stopping it, and the global `t` (bar not focused) brings it back. Timers are
+    timestamp-based, so a hidden countdown keeps the correct remaining time.
+  - **Survives reloads**: the timer list, the timer bound to the slot, and its visibility
+    are saved in `localStorage` under `start.timers`, `start.timerActive` and
+    `start.timerVisible`, so a countdown resumes with the correct remaining time, a
+    count-up keeps counting, a finished countdown flips to a count-up anchored at its end
+    (and flashes for a few seconds), and a hidden timer reloads back into the clock/logo
+    view. A paused timer reloads paused (frozen value).
 
 ## Sync (cross-device settings)
 
@@ -183,14 +203,19 @@ after that the device holds a token and behaves exactly as before.
   same pull **without reloading**: the merged state (bookmarks, history, engine,
   top mode, clock, timer) is applied live, so changes made on another device
   show up immediately.
-- **Push on change**: every existing `save()` (mode, engine, clock, timer —
-  including stopping a timer, which syncs as a deletion) schedules a debounced POST
+- **Push on change**: every existing `save()` (mode, engine, clock, timer list,
+  bookmarks, history — including resetting a timer, which updates the list to an idle
+  state) schedules a debounced POST
   to the API. Offline? The change stays local and is retried on the next change or
   load. Server-side last-write-wins protects against a stale offline device.
-- **Timers sync too**: `start.timer` stores absolute end/start timestamps, so a
-  countdown started on one device resumes on another with the correct remaining time.
+- **Timers sync too**: `start.timers` stores absolute end/start timestamps per timer,
+  so a countdown started on one device resumes on another with the correct remaining
+  time — and every named timer, its kind, its configured duration, which timer owns the
+  display slot (`start.timerActive`) and whether it was shown (`start.timerVisible`)
+  sync like the other settings.
 - **What syncs**: `start.mode`, `start.engine`, `start.clock`,
-  `start.timer`, `start.bookmarks`, `start.history` — and notably NOT
+  `start.timers`, `start.timerActive`, `start.timerVisible`, `start.timerHours`,
+  `start.bookmarks`, `start.history` — and notably NOT
   `start.theme`, which is device-specific (each device keeps its own
   system/light/dark choice in `localStorage`). The sync bookkeeping itself lives
   in `localStorage` under `start.sync.ts` (per-key timestamps) and is never uploaded.
@@ -219,8 +244,16 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
   explicit choices reached by cycling with `k` (system → opposite of the OS theme → other explicit theme → system).
   Device-specific — never synced.
 - `start.clock` — `on` or `off`; restored on load (clock shown when `on`).
-- `start.timer` — the active timer: `{kind, end|start, hours, visible}` (absolute
-  timestamps); restored on load; removed by `x`.
+- `start.timers` — the named timer list: a JSON array of
+  `{id, name, kind:'up'|'down', dur, end, start, paused}` objects (absolute timestamps
+  where set; `paused` is `{secs, phase}` when a timer is paused); restored on load; the
+  old single-timer record (`start.timer`) is migrated into a one-element list on first load.
+- `start.timerActive` — the `id` of the timer currently bound to the display slot
+  (absent when none); synced like the rest.
+- `start.timerVisible` — `1`/`0`; whether the display slot showed the active timer (vs.
+  the clock/logo) when it was saved, so a reload lands back on the same view.
+- `start.timerHours` — `1`/`0`; the `h` hours-display preference (MM:SS vs `HH:MM:SS`),
+  restored on load.
 - `start.bookmarks` — the bookmark list: a JSON array of `{label, url}` objects,
   edited from settings → links; restored on load; first run defaults to the original
   hardcoded links.
