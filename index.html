@@ -1523,11 +1523,14 @@
     var active = timerMenu.children[timerIndex];
     if (active && active.scrollIntoView) { active.scrollIntoView({ block: 'nearest' }); }
   }
-  /** Move the dropdown highlight by delta (wrapping). */
+  /** Move the dropdown highlight by delta (wrapping) and sync the displayed
+      timer to the newly highlighted row — matching 1-9 digit selection, so the
+      slot always shows the timer the arrows have selected. */
   function moveTimerIndex(delta) {
     if (timers.length === 0) return;
     timerIndex = (timerIndex + delta + timers.length) % timers.length;
     renderTimerList();
+    showTimer(timers[timerIndex]);
   }
   /** Bind the timer at idx to the display slot (show it). */
   function selectTimerAt(idx) {
