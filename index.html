@@ -459,13 +459,15 @@
   /* ---------- modes ---------- */
   /* url (://) — type a URL, Enter opens it in a new tab (default)
      search (magnifier) — engine search, Enter opens results in a new tab
-     command (❯) — a/b/c/f/k/p/s/t/u/y/h/x/z/r + 1-9 quick links
+     command (❯) — a/b/c/f/k/p/s/t/u/y/h/x/z/r + 1-9 quick links; t opens
+     the timers manager
      settings (gear) — b/g/d/w/f/e engines, c/k toggles, l links, t timers,
      x logout, r reset
      links (gear) — bookmarks: 1-9 open, a add, e edit, x delete
-     timers (gear) — a visible dropdown listing every named timer (name, UP/DOWN,
+     timers (⏱) — a visible dropdown listing every named timer (name, UP/DOWN,
      live MM:SS/HH:MM:SS); ↑/↓ move the highlight, Enter shows it in the slot,
-     a add, e rename, x delete, y start, z pause/resume, r reset, c/k toggles
+     1-9 select & show (1 = first), a add, e rename, x delete, y start,
+     z pause/resume, r reset, c/k toggles
      timer — countdown/count-up value entry (quick path)
      topMode is the selected url/search mode, persisted as start.mode. */
   function setMode(next) {
@@ -474,8 +476,8 @@
     urlIcon.hidden = next !== 'url';
     searchIcon.hidden = next !== 'search';
     cmdIndicator.hidden = next !== 'command';
-    settingsIcon.hidden = (next !== 'settings' && next !== 'links' && next !== 'timers');
-    timerIcon.hidden = next !== 'timer';
+    settingsIcon.hidden = (next !== 'settings' && next !== 'links');
+    timerIcon.hidden = (next !== 'timer' && next !== 'timers');
     if (next === 'url') { input.placeholder = 'Abrir URL…'; }
     else if (next === 'search') { input.placeholder = ENGINES[engine].ph; }
     else if (next === 'command') { input.placeholder = 'Comando…'; }
@@ -1149,10 +1151,16 @@
             if (t.kind === 'down' && typeof t.dur === 'number' && t.dur >= 1) {
               rec.dur = Math.floor(t.dur);
             }
-            if (typeof t.end === 'number' && Number.isFinite(t.end) && t.end > 0) rec.end = t.end;
-            if (typeof t.start === 'number' && Number.isFinite(t.start) && t.start > 0) rec.start = t.start;
-            /* a countdown can't be counting down AND counting up at once */
-            if (rec.kind === 'down' && rec.end !== null && rec.start !== null) rec.start = null;
+            if (rec.kind === 'down') {
+              if (typeof t.end === 'number' && Number.isFinite(t.end) && t.end > 0) rec.end = t.end;
+              if (typeof t.start === 'number' && Number.isFinite(t.start) && t.start > 0) rec.start = t.start;
+              /* a countdown can't be counting down AND counting up at once */
+              if (rec.end !== null && rec.start !== null) rec.start = null;
+            } else {
+              /* a count-up only counts up: ignore any stored `end` so trailing
+                 corrupt data can't make it resume as a countdown later */
+              if (typeof t.start === 'number' && Number.isFinite(t.start) && t.start > 0) rec.start = t.start;
+            }
             /* paused: `{secs, phase}` — a timer is paused XOR running, so clear
                any run state when a valid pause record is present. */
             if (t.paused && typeof t.paused === 'object' &&
@@ -1203,6 +1211,11 @@
       if (window.__startSync) { window.__startSync.removed('start.timer'); }
     }
     if (timers.length === 0) { timerVisible = false; }
+    /* Return the timer that owns the display slot so the load-time restore
+       (and the sync pull) can bind it immediately via showTimer(). The
+       visible flag stays separate so a hidden timer keeps running in the
+       background without taking the slot. */
+    return getActive();
   }
 
   function enterTimer() { setMode('timer'); input.value = ''; }
@@ -1422,8 +1435,10 @@
          (background) timer just persists the new format for when it's
          shown again */
       if (timerVisible) { renderTimer(liveSeconds(t)); }
-      saveTimers();
     }
+    /* persist the preference even with no active timer, so `h` with an
+       empty list still survives a reload / syncs (CodeRabbit) */
+    saveTimers();
   }
 
   /* ---------- timers manager (settings -> t) ---------- */
@@ -1558,6 +1573,14 @@
     else if (c === 'x') { startTimerDelete(timerIndex); }
     else if (c === 'y') { startTimerAt(timerIndex); input.value = ''; }
     else if (c === 'z') { togglePause(timers[timerIndex]); input.value = ''; }
+    else if (/^[1-9]$/.test(c)) {
+      /* 1-9 select & show the Nth timer (1 = first), like the URL/bookmark
+         list; also move the highlight to match the keyboard reference.
+         (Independent of the bookmark-count-bound isDigitKey.) */
+      var dn = Number(c) - 1;
+      if (dn >= 0 && dn < timers.length) { timerIndex = dn; selectTimerAt(dn); }
+      input.value = '';
+    }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
     else if (c === 'r') { resetTimer(timers[timerIndex]); input.value = ''; }
@@ -1650,14 +1673,22 @@
       var tls = null;
       try { tls = localStorage.getItem('start.timers'); } catch (e) {}
       if (tls === null) {
-        /* server deleted the timer list -> stop local timers, back to base */
+        /* server deleted the timer list -> stop local timers, back to base.
+           Do NOT call saveTimers() here: that would write start.timers:'[]'
+           as a real value and overwrite the remote deletion (it would re-publish
+           an empty list instead of keeping it deleted). Drop the keys locally and
+           signal a removal so the sync module doesn't push a value. */
         if (timers.length) {
           if (timerTick) { clearInterval(timerTick); timerTick = null; }
           timers = [];
           activeId = null;
           timerVisible = false;
           clearTimerFlash();
-          saveTimers();
+          ['start.timers', 'start.timerActive', 'start.timerVisible'].forEach(function (k) {
+            try { localStorage.removeItem(k); } catch (e) {}
+            if (window.__startSync) { window.__startSync.removed(k); }
+          });
+          updateTimerMenu();
         }
       } else {
         /* server has a newer list -> replace the running machinery and
@@ -1726,12 +1757,7 @@
     else if (c === 'k') { toggleTheme(); input.value = ''; }
     else if (c === 'p') { pullFromServer(); input.value = ''; }
     else if (c === 's' || c === '/' || c === '-') { enterSettings(); }
-    else if (c === 't') {
-      /* the active timer comes back on display; otherwise set up a new one */
-      var act = getActive();
-      if (act) { showTimer(act); input.value = ''; }
-      else { enterTimer(); }
-    }
+    else if (c === 't') { enterTimers(); }
     else if (c === 'u') { startCountup(); input.value = ''; }
     else if (c === 'y') { startActive(); input.value = ''; }
     else if (c === 'h') { toggleHours(); input.value = ''; }

@@ -116,7 +116,7 @@ Personal browser start page — minimalist, in the same style as the blog.
     the current values are pre-filled, and Enter on an empty field keeps them
   - `x` — **Borrar**: press the bookmark number, then confirm with `s` (or `y` —
     any other key cancels)
-  - `c` / `k` / `r` — same toggles/refresh as in settings
+  - `c` / `k` / `r` — same toggles and active-timer reset as in settings
   Backspace on an empty prompt cancels a flow and climbs one level (links →
   settings → command); Escape cancels a flow or climbs the same stack mid-typing;
   with no flow active, Enter on an empty prompt exits to the top (during a flow
@@ -152,29 +152,29 @@ Personal browser start page — minimalist, in the same style as the blog.
   count-down, and they can all run at once. One is bound to the logo slot at a time
   (the others keep counting in the background); the timers manager dropdown shows them
   all and selects which one is shown.
-  - **Quick countdown**: type `aaa` then `t`, type the duration and press Enter — three
-    formats are accepted: a plain integer is minutes (`25` = 25 min), `MM:SS` (`05:00`),
+  - **Countdown formats**: a plain integer is minutes (`25` = 25 min), `MM:SS` (`05:00`),
     or `HH:MM:SS` (`1:30:00`). A duration of one hour or more (`60`, `90`, or `90:00`)
-    auto-converts to `HH:MM:SS`. The timer lands in the named list (default name
-    "Temporizador") and is renamed from the manager.
+    auto-converts to `HH:MM:SS`. A created timer lands in the named list (default name
+    "Temporizador") and can be renamed from the manager.
   - **Quick count-up**: type `aaa` then `u` for a count-up that starts at `00:00`.
-  - **Named timers (settings → `t`)**: a visible dropdown (same design as the URL-opener
-    history dropdown) lists every timer — name, a `UP`/`DOWN` badge and a live
-    `MM:SS`/`HH:MM:SS` reading that **ticks for a running timer** and sits still for a
-    paused/stopped one. `↑`/`↓` move the highlight (wrapping), **Enter** binds the highlighted
-    timer to the display slot; `a` **Añadir** (name → type: `u`/`d` → duration for a
-    countdown), `e` **Editar** (rename, and the duration for a countdown), `x` **Borrar**
-    (confirm `s`/`y`), `y` **start** the highlighted timer, `z` **pause/resume** it, `r`
-    **reset** it (idle), plus the usual `c`/`k` toggles. An idle countdown shows its
-    configured length (e.g. `25:00`); an idle count-up shows `00:00`.
+  - **Timers manager (`t` in command mode, or settings → `t`)**: a visible dropdown (same
+    design as the URL-opener history dropdown) lists every timer — name, a `UP`/`DOWN`
+    badge and a live `MM:SS`/`HH:MM:SS` reading that **ticks for a running timer** and sits
+    still for a paused/stopped one. `↑`/`↓` move the highlight (wrapping), **Enter** binds
+    the highlighted timer to the display slot, and `1`–`9` select & show that timer by
+    position (1 = first). `a` **Añadir** (name → type: `u`/`d` → duration for a countdown),
+    `e` **Editar** (rename, and the duration for a countdown), `x` **Borrar** (confirm
+    `s`/`y`), `y` **start** the highlighted timer, `z` **pause/resume** it, `r` **reset**
+    it (idle), plus the usual `c`/`k` toggles. An idle countdown shows its configured
+    length (e.g. `25:00`); an idle count-up shows `00:00`.
   - The timer replaces the logo at the top in the same block-art style; it shows `MM:SS`
     by default and `HH:MM:SS` once the duration/elapsed time reaches one hour. `h` (in
     command mode) toggles the hours display manually.
   - **Background running**: every timer keeps ticking even when its display is hidden —
     `c` while a timer is shown hides it and brings back the clock (or `c` again, the logo)
-    without stopping it, and `t` (command mode or the global shortcut) brings it back.
-    Timers are timestamp-based, so a hidden countdown keeps the correct remaining time.
-  - **Survives reloads**: the list, which timer owns the slot, and whether it was shown
+    without stopping it, and the global `t` (bar not focused) brings it back. Timers are
+    timestamp-based, so a hidden countdown keeps the correct remaining time.
+  - **Survives reloads**: the timer list, the timer bound to the slot, and its visibility
     are saved in `localStorage` under `start.timers`, `start.timerActive` and
     `start.timerVisible`, so a countdown resumes with the correct remaining time, a
     count-up keeps counting, a finished countdown flips to a count-up anchored at its end
@@ -205,7 +205,7 @@ after that the device holds a token and behaves exactly as before.
   top mode, clock, timer) is applied live, so changes made on another device
   show up immediately.
 - **Push on change**: every existing `save()` (mode, engine, clock, timer list,
-  bookmarks, history — including stopping a timer, which updates the list to an idle
+  bookmarks, history — including resetting a timer, which updates the list to an idle
   state) schedules a debounced POST
   to the API. Offline? The change stays local and is retried on the next change or
   load. Server-side last-write-wins protects against a stale offline device.
