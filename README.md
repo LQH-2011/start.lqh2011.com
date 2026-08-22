@@ -63,9 +63,7 @@ Personal browser start page — minimalist, in the same style as the blog.
     change in place, no page reload (stays in command mode)
   - `s` — **Settings**: open the settings mode (gear indicator); typing `/` or
     `-` again in command mode does the same
-  - `t` — **Timer**: show the active timer (bring its display back); with no
-    active timer, enter the quick countdown setup (timer indicator; type the
-    duration, Enter starts it)
+  - `t` — **Timers**: open the named-timers manager (timer indicator)
   - `u` — start a quick count-up from `00:00` (creates a new named timer)
   - `y` — start the active timer (a countdown restarts from its saved
     duration, a count-up from `00:00`); this clears a paused timer
@@ -116,7 +114,8 @@ Personal browser start page — minimalist, in the same style as the blog.
     the current values are pre-filled, and Enter on an empty field keeps them
   - `x` — **Borrar**: press the bookmark number, then confirm with `s` (or `y` —
     any other key cancels)
-  - `c` / `k` / `r` — same toggles and active-timer reset as in settings
+  - `c` / `k` — same toggles as in settings; `r` — refresh/reload (links mode keeps
+    the page reload, unlike the other submodes where `r` resets the active timer)
   Backspace on an empty prompt cancels a flow and climbs one level (links →
   settings → command); Escape cancels a flow or climbs the same stack mid-typing;
   with no flow active, Enter on an empty prompt exits to the top (during a flow
