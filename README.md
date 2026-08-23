@@ -154,13 +154,13 @@ Personal browser start page — minimalist, in the same style as the blog.
   - **Countdown formats**: a plain integer is minutes (`25` = 25 min), `MM:SS` (`05:00`),
     or `HH:MM:SS` (`1:30:00`). A duration of one hour or more (`60`, `90`, or `90:00`)
     auto-converts to `HH:MM:SS`. A created timer lands in the named list (default name
-    "Temporizador") and can be renamed from the manager.
+    "Temporizador") and **starts running immediately**; it can be renamed from the manager.
   - **Quick count-up**: type `aaa` then `u` for a count-up that starts at `00:00`.
   - **Timers manager (`t` in command mode, or settings → `t`)**: a visible dropdown (same
     design as the URL-opener history dropdown) lists every timer — name, a `UP`/`DOWN`
     badge and a live `MM:SS`/`HH:MM:SS` reading that **ticks for a running timer** and sits
-    still for a paused/stopped one. `↑`/`↓` move the highlight (wrapping), **Enter** binds
-    the highlighted timer to the display slot, and `1`–`9` select & show that timer by
+    still for a paused/stopped one. `↑`/`↓` move the highlight (wrapping), **Enter** starts
+    the highlighted timer (same as `y`), and `1`–`9` select & show that timer by
     position (1 = first). `a` **Añadir** (name → type: `u`/`d` → duration for a countdown),
     `e` **Editar** (rename, and the duration for a countdown), `x` **Borrar** (confirm
     `s`/`y`), `y` **start** the highlighted timer, `z` **pause/resume** it, `r` **reset**

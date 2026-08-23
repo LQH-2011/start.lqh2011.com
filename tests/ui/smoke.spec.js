@@ -687,27 +687,40 @@ test('timers: arrow keys move the highlight AND show the selected timer (matches
 
 test('timers manager: Enter on the highlighted timer starts it (same as y)', async ({ page }) => {
   await page.goto('/');
-  /* an idle countdown => a deterministic displayed value before Enter */
+  /* two IDLE countdowns — moving the highlight to the SECOND timer and starting
+     it proves Enter honours timerIndex (a regression that always starts the
+     ACTIVE timer would wrongly start t1). */
   await seedTimers(page, [
-    { id: 't1', name: 'Pomodoro', kind: 'down', dur: 25 * 60, end: null, start: null, paused: null }
+    { id: 't1', name: 'Pomodoro', kind: 'down', dur: 25 * 60, end: null, start: null, paused: null },
+    { id: 't2', name: 'Coffee', kind: 'down', dur: 10 * 60, end: null, start: null, paused: null }
   ], { active: 't1', visible: true });
 
   await typeInBar(page, 'aaa');
   await typeInBar(page, 's');
   await typeInBar(page, 't');
   await expect(page.locator('#timerList')).toBeVisible();
-  /* idle: shows the configured 25:00 and is NOT running */
+  /* the highlight starts on the active timer (t1 -> 25:00); both are idle */
+  await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText('Pomodoro');
   await expect(page.locator('#logo')).toHaveAttribute('aria-label', '25:00');
   let list = await timers(page);
   expect(list[0].end).toBeNull();
+  expect(list[1].end).toBeNull();
 
-  /* Enter (no Arrow, no `y`) starts the highlighted timer immediately */
+  /* move the highlight onto the SECOND timer (t2 -> 10:00) */
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText('Coffee');
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '10:00');
+  expect(await activeTimerId(page)).toBe('t2');
+
+  /* Enter (no `y`) starts the HIGHLIGHTED timer (t2), leaving t1 idle */
   await page.keyboard.press('Enter');
   list = await timers(page);
-  expect(list[0].end).toBeGreaterThan(Date.now());
+  expect(list[1].end).toBeGreaterThan(Date.now());   /* t2 running */
+  expect(list[1].start).toBeNull();
+  expect(list[1].paused).toBeNull();
+  expect(list[0].end).toBeNull();                    /* t1 still idle */
   expect(list[0].start).toBeNull();
-  expect(list[0].paused).toBeNull();
-  /* the slot now shows a live countdown and the bar stays in timers mode */
+  /* the slot shows the started timer counting down; the bar stays in timers mode */
   await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}$/);
   await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Temporizadores…');
 });
