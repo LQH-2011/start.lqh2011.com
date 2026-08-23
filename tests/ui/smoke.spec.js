@@ -1121,3 +1121,44 @@ test('sync indicator: warning on a failed pull, then disappears (routed 404)', a
   await expect.poll(() => syncShown(page, '#syncIcon .sync-warn')).toBe(true);
   await expect.poll(() => syncShown(page, '#syncIcon')).toBe(false);
 });
+
+test('sync indicator: merging new data flashes the success tick (before any reload)', async ({ page }) => {
+  /* a newer item (ts > the local, empty start.sync.ts) makes `changed` true, so
+     the automatic pull reloads to apply it — but the success tick must be shown
+     FIRST, then the reload fires after the flash. */
+  await page.route('**/api/data', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ items: { 'start.mode': { v: 'url', ts: 1234567890 } } })
+  }));
+  await page.goto('/');
+
+  /* the tick is visible for the pull that merged the new data, before reload */
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-ok')).toBe(true);
+});
+
+test('sync indicator: a newer pull supersedes an in-flight one (generation guard)', async ({ page }) => {
+  let count = 0;
+  await page.route('**/api/data', async (route) => {
+    count += 1;
+    if (count === 1) {
+      /* the initial load pull is held open; the manual p pull (2nd) resolves first */
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await page.goto('/');
+
+  /* the load pull (1st) is in flight; trigger a manual p pull (2nd, fast) */
+  await page.locator('#q').focus();
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 'p');
+
+  /* the 2nd pull resolves -> success tick flashes, then the icon hides */
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-ok')).toBe(true);
+  await expect.poll(() => syncShown(page, '#syncIcon')).toBe(false);
+
+  /* the (superseded) 1st pull completes later; the generation guard drops its
+     result, so it must NOT re-show the icon/spinner */
+  await page.waitForTimeout(1800);
+  await expect.poll(() => syncShown(page, '#syncIcon')).toBe(false);
+});

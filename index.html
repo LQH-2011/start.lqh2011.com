@@ -2105,6 +2105,11 @@
   var syncOk = syncIcon.querySelector('.sync-ok');
   var syncWarn = syncIcon.querySelector('.sync-warn');
   var syncFlashTimer = null;
+  /* Monotonic generation for pulls: each syncFromServer call bumps it, and a
+     pull only drives the indicator if it is still the LATEST pull when it
+     finishes — so an earlier pull's result can't hide the spinner/flash over a
+     later pull still in flight. */
+  var syncGen = 0;
   /* Show exactly one child icon (or none) and show/hide the container. The
      icon container starts `hidden` (display:none via the UA [hidden] rule);
      once a sync runs we drive display via inline style so the per-state icon
@@ -2177,14 +2182,18 @@
      state live through window.__startOnPull (static state + data UI). */
   function syncFromServer(manual) {
     if (!token) return;
+    /* this pull owns the indicator only while it stays the latest */
+    var gen = ++syncGen;
     /* show the cycle-arrow while the pull is in flight */
     showSyncIcon('loading');
     fetch(API_BASE + '/api/data', {
       headers: { 'Authorization': 'Bearer ' + token }
     }).then(function (r) {
+      if (gen !== syncGen) return;   /* a newer pull superseded this one */
       if (r.status === 401) { dropToken(); showOverlay(); flashSyncResult('warn'); return; }
       if (!r.ok) { readyToPush = true; flashSyncResult('warn'); return; }
       return r.json().then(function (data) {
+        if (gen !== syncGen) return;   /* a newer pull superseded this one */
         var items = (data && data.items) || {};
         var ts = readTs();
         var changed = false;
@@ -2205,7 +2214,13 @@
              user is interacting (static state stays in localStorage for
              the next load), and reloads when the user isn't typing */
           if (window.__startOnPull) { window.__startOnPull(manual); }
-          if (!manual && !interacted) { location.reload(); return; }
+          if (!manual && !interacted) {
+            /* show the success tick, then apply the synced state via reload —
+               otherwise the reload preempts the tick for this pull */
+            flashSyncResult('ok');
+            setTimeout(function () { location.reload(); }, 1200);
+            return;
+          }
         }
         /* sync landed (and won't reload): flash the success tick */
         flashSyncResult('ok');
@@ -2214,6 +2229,7 @@
         schedulePush();
       });
     }).catch(function () {
+      if (gen !== syncGen) return;   /* a newer pull superseded this one */
       readyToPush = true;   /* offline: local-first, retry on next change/load */
       flashSyncResult('warn');
     });
