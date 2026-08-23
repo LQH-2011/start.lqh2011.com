@@ -509,15 +509,39 @@
      scheme-like tokens are host:port authorities (localhost:3000,
      example.com:8080) -> https:// prefixed; everything else with a scheme
      (javascript:, data:, …) is rejected so window.open never executes script
-     or renders deceptive content. Bare domains get https:// prefixed. */
+     or renders deceptive content. Bare domains get https:// prefixed — but
+     only when the host is plausible (a dotted FQDN, localhost, or an IP);
+     garbage like "hola" or "foo bar" is rejected so the opener can never
+     push a nonsense URL (e.g. opening https://hola or https://foo bar). */
   function normalizeUrl(raw) {
     var m = raw.match(/^([a-z][a-z0-9+.-]*):(.*)$/i);
     if (m) {
-      if (/^(https?|mailto|tel)$/i.test(m[1])) return raw;
-      if (/^\d/.test(m[2])) return 'https://' + raw;  /* host:port */
+      if (/^(https?|mailto|tel)$/i.test(m[1])) return plausiblyOpenable(raw) ? raw : null;
+      if (/^\d/.test(m[2])) { var hp = 'https://' + raw; return plausiblyOpenable(hp) ? hp : null; }  /* host:port */
       return null;
     }
-    return 'https://' + raw;
+    var bare = 'https://' + raw;
+    return plausiblyOpenable(bare) ? bare : null;
+  }
+  /** Whether a (normalized) URL is safe/openable: it must parse, and for
+      http(s) the host must be plausible (a dotted FQDN, localhost, or an IP)
+      with no whitespace. mailto/tel are the only other allowed schemes, so
+      anything else is rejected. This gates BOTH the opener and the "Abrir este
+      URL…" action row (which only renders when the typed text is openable). */
+  function plausiblyOpenable(url) {
+    var u = null;
+    try { u = new URL(url); } catch (e) { return false; }
+    var proto = u.protocol;
+    if (proto === 'mailto:' || proto === 'tel:') return true;
+    if (proto !== 'http:' && proto !== 'https:') return false;
+    if (/\s/.test(url)) return false;
+    var h = u.hostname;
+    if (h === 'localhost') return true;
+    /* IPv6 (the URL parser brackets it) or a dotted IPv4 */
+    if (/^\[[0-9a-f:]+\]$/i.test(h)) return true;
+    if (/^[0-9.]+$/.test(h)) return h.split('.').length === 4;
+    /* a bare single-label host ("hola", "git") is not a usable URL — require a dot */
+    return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(h);
   }
   function openUrl() {
     var raw = input.value.trim();
@@ -537,17 +561,21 @@
      synced value lives on the user's own sync server in plaintext — the
      user explicitly opted into this. While the bar has text in url mode, a
      dropdown lists the entries matching the typed letters (case-insensitive
-     substring on the scheme-stripped URL). The first row is ALWAYS
-     "Abrir este URL…": it opens the typed text as a URL, so a new URL that
-     is a substring of an older entry (e.g. "example.com" typed after
-     "subdomain.example.com") is still reachable with Enter instead of being
-     captured by the old entry. The matching history entries follow, and the
-     action row is the default highlight. ArrowUp/Down move the highlight
-     (wrapping), Enter or a click opens the highlighted row, `d` deletes a
-     highlighted history entry, Escape/blur hides the menu. The menu never
-     appears in the other modes or with an empty bar. The input is exposed
-     to assistive tech as a combobox (aria-controls/expanded/activedescendant)
-     linked to the listbox. */
+     substring on the scheme-stripped URL). When the typed text is a valid,
+     openable URL the first row is "Abrir este URL…": it opens the typed text
+     as a URL, so a new URL that is a substring of an older entry (e.g.
+     "example.com" typed after "subdomain.example.com") is still reachable
+     with Enter instead of being captured by the old entry. When the typed
+     text is NOT a valid URL (e.g. "hola", "foo bar", a bare label like "git")
+     that action row is omitted and only the matching history rows are listed —
+     pressing Enter then opens the highlighted history entry, never the
+     nonsense typed text. The matching history entries follow, and the action
+     row (when present) is the default highlight. ArrowUp/Down move the
+     highlight (wrapping), Enter or a click opens the highlighted row, `d`
+     deletes a highlighted history entry, Escape/blur hides the menu. The menu
+     never appears in the other modes or with an empty bar. The input is
+     exposed to assistive tech as a combobox (aria-controls/expanded/
+     activedescendant) linked to the listbox. */
   var HISTORY_LIMIT = 20;
   var history = [];       /* normalized URLs, most recent first */
   var matches = [];       /* current filtered view for the dropdown */
@@ -597,29 +625,38 @@
     });
     return out;
   }
+  /** Whether the bar's current text is a valid, openable URL — used to decide
+      whether to render the "Abrir este URL…" action row. */
+  function actionOpenable() { return !!normalizeUrl(input.value.trim()); }
   function renderHistoryMenu() {
     historyMenu.textContent = '';
-    /* Row 0 is always the "Abrir este URL…" action: it opens the typed text
-       as a URL, not a history entry. It is the default highlight, so Enter
-       opens what was typed even when that URL is a substring of an older
-       entry (e.g. "example.com" typed after "subdomain.example.com" would
-       otherwise only reach the old URL). */
-    var action = document.createElement('div');
-    action.id = 'urlHistory-item-0';   /* stable ID for aria-activedescendant */
-    action.className = 'url-history-item url-history-action' +
-                       (historyIndex === 0 ? ' active' : '');
-    action.setAttribute('role', 'option');
-    if (historyIndex === 0) { action.setAttribute('aria-selected', 'true'); }
-    action.textContent = 'Abrir este URL…';
-    /* mousedown (not click): the input must not lose focus first, and
-       preventDefault keeps focus so blur never races the selection */
-    action.addEventListener('mousedown', function (ev) {
-      ev.preventDefault();
-      openUrl();
-    });
-    historyMenu.appendChild(action);
+    /* Row 0 is the "Abrir este URL…" action, but ONLY when the typed text is a
+       valid, openable URL. Garbage (e.g. "hola", "foo bar", a bare label like
+       "git") is not a URL, so no action row is rendered — the dropdown then
+       only lists matching history entries and Enter opens the highlighted one,
+       never the nonsense typed text. When present, the action row is the
+       default highlight, so Enter opens what was typed even when that URL is a
+       substring of an older entry (e.g. "example.com" typed after
+       "subdomain.example.com" would otherwise only reach the old URL). */
+    var offset = actionOpenable() ? 1 : 0;
+    if (offset) {
+      var action = document.createElement('div');
+      action.id = 'urlHistory-item-0';   /* stable ID for aria-activedescendant */
+      action.className = 'url-history-item url-history-action' +
+                         (historyIndex === 0 ? ' active' : '');
+      action.setAttribute('role', 'option');
+      if (historyIndex === 0) { action.setAttribute('aria-selected', 'true'); }
+      action.textContent = 'Abrir este URL…';
+      /* mousedown (not click): the input must not lose focus first, and
+         preventDefault keeps focus so blur never races the selection */
+      action.addEventListener('mousedown', function (ev) {
+        ev.preventDefault();
+        openUrl();
+      });
+      historyMenu.appendChild(action);
+    }
     matches.forEach(function (url, i) {
-      var row = i + 1;   /* history rows follow the action row */
+      var row = i + offset;   /* history rows follow the action row when present */
       var el = document.createElement('div');
       el.id = 'urlHistory-item-' + row;   /* stable ID for aria-activedescendant */
       el.className = 'url-history-item' + (historyIndex === row ? ' active' : '');
@@ -635,13 +672,14 @@
       historyMenu.appendChild(el);
     });
     /* keep the combobox's active descendant in sync with the highlight */
-    if (historyIndex >= 0 && historyIndex <= matches.length) {
+    var lastRow = matches.length + offset - 1;
+    if (historyIndex >= 0 && historyIndex <= lastRow) {
       input.setAttribute('aria-activedescendant', 'urlHistory-item-' + historyIndex);
     }
   }
   function moveHistoryIndex(delta) {
     if (matches.length === 0) return;
-    var rows = matches.length + 1;   /* action row + one per history entry */
+    var rows = matches.length + (actionOpenable() ? 1 : 0);   /* action row + history entries */
     historyIndex = (historyIndex + delta + rows) % rows;
     renderHistoryMenu();
     var items = historyMenu.children || [];
@@ -1839,16 +1877,19 @@
   input.addEventListener('keydown', function (e) {
     /* url mode with the history dropdown open: arrows move the highlight,
        Enter opens the highlighted row (row 0 = "Abrir este URL…" opens the
-       typed text), `d` deletes a highlighted history entry, Escape closes
-       the menu. */
+       typed text — but only when the typed text is a valid URL; for garbage
+       the action row is omitted and row 0 is the first match), `d` deletes a
+       highlighted history entry, Escape closes the menu. */
     if (mode === 'url' && !historyMenu.hidden) {
       if (e.key === 'ArrowDown') { e.preventDefault(); moveHistoryIndex(1); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); moveHistoryIndex(-1); return; }
+      /* the action row occupies row 0 only when the typed text is a valid URL */
+      var offset = actionOpenable() ? 1 : 0;
       if (e.key === 'Enter') {
-        /* Row 0 is the "Abrir este URL…" action; any other highlighted row
-           is a history entry. */
-        if (historyIndex === 0) { e.preventDefault(); openUrl(); }
-        else if (matches[historyIndex - 1]) { e.preventDefault(); selectHistory(matches[historyIndex - 1]); }
+        /* Row 0 is the "Abrir este URL…" action (when present); any other
+           highlighted row is a history entry. */
+        if (historyIndex === 0 && offset) { e.preventDefault(); openUrl(); }
+        else if (matches[historyIndex - offset]) { e.preventDefault(); selectHistory(matches[historyIndex - offset]); }
         return;
       }
       if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
@@ -1856,9 +1897,9 @@
            types into the bar normally (filtering the list). Modifier
            combos (Ctrl+D bookmark, Alt+D address bar) and held-key
            repeats are never hijacked. */
-        if (historyIndex > 0 && matches[historyIndex - 1]) {
+        if (historyIndex >= offset && matches[historyIndex - offset]) {
           e.preventDefault();
-          deleteHistory(matches[historyIndex - 1]);
+          deleteHistory(matches[historyIndex - offset]);
         }
         return;
       }
