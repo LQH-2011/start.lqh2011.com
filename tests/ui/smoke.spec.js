@@ -401,6 +401,31 @@ test('invalid URL in url mode does not open on Enter (garbage is blocked)', asyn
   await page.keyboard.press('Enter');
   expect(await opened(page)).toEqual([]);
   await expect(page.locator('#q')).toHaveJSProperty('value', 'foo bar');
+
+  /* syntactically invalid DNS labels (labels that start/end with a hyphen, or
+     empty labels) are not usable URLs — Enter must NOT open them */
+  for (const bad of ['-.-', 'foo-.com', 'foo.-com', 'example..com']) {
+    await typeInBar(page, bad);
+    await page.keyboard.press('Enter');
+    expect(await opened(page)).toEqual([]);
+    await expect(page.locator('#q')).toHaveJSProperty('value', bad);
+  }
+});
+
+test('valid URL with no matching history entry shows "Abrir este URL…" and Enter opens it', async ({ page }) => {
+  await page.goto('/');
+
+  /* example.com is a valid URL but matches none of the seeded history entries;
+     the dropdown should still render the action row so the URL is openable. */
+  await typeInBar(page, 'example.com');
+  await expect(page.locator('#urlHistory')).toBeVisible();
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(1);
+  await expect(page.locator('#urlHistory .url-history-item').first()).toHaveText('Abrir este URL…');
+
+  await page.keyboard.press('Enter');
+  expect(await opened(page)).toEqual(['https://example.com']);
+  await expect(page.locator('#q')).toHaveJSProperty('value', '');
+  await expect(page.locator('#urlHistory')).toBeHidden();
 });
 
 test('invalid (bare-label) input with a history match omits the "Abrir este URL…" row and opens the match', async ({ page }) => {

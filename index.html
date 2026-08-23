@@ -540,8 +540,11 @@
     /* IPv6 (the URL parser brackets it) or a dotted IPv4 */
     if (/^\[[0-9a-f:]+\]$/i.test(h)) return true;
     if (/^[0-9.]+$/.test(h)) return h.split('.').length === 4;
-    /* a bare single-label host ("hola", "git") is not a usable URL — require a dot */
-    return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(h);
+    /* a bare single-label host ("hola", "git") is not a usable URL — require a
+       dotted FQDN whose labels are RFC-style DNS labels (each starts AND ends
+       with an alphanumeric; hyphens only inside), so garbage like "-.-",
+       "foo-.com" or "foo.-com" is rejected. */
+    return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i.test(h);
   }
   function openUrl() {
     var raw = input.value.trim();
@@ -565,12 +568,14 @@
      openable URL the first row is "Abrir este URL…": it opens the typed text
      as a URL, so a new URL that is a substring of an older entry (e.g.
      "example.com" typed after "subdomain.example.com") is still reachable
-     with Enter instead of being captured by the old entry. When the typed
-     text is NOT a valid URL (e.g. "hola", "foo bar", a bare label like "git")
-     that action row is omitted and only the matching history rows are listed —
-     pressing Enter then opens the highlighted history entry, never the
-     nonsense typed text. The matching history entries follow, and the action
-     row (when present) is the default highlight. ArrowUp/Down move the
+     with Enter instead of being captured by the old entry. A valid URL shows
+     that action row even when it matches no history entry (the dropdown then
+     has only the action row), so a brand-new URL has a visible way to open it.
+     When the typed text is NOT a valid URL (e.g. "hola", "foo bar", a bare
+     label like "git") that action row is omitted and only the matching history
+     rows are listed — pressing Enter then opens the highlighted history entry,
+     never the nonsense typed text. The matching history entries follow, and the
+     action row (when present) is the default highlight. ArrowUp/Down move the
      highlight (wrapping), Enter or a click opens the highlighted row, `d`
      deletes a highlighted history entry, Escape/blur hides the menu. The menu
      never appears in the other modes or with an empty bar. The input is
@@ -716,12 +721,17 @@
     var v = input.value;
     if (!v.trim()) { hideHistoryMenu(); return; }
     matches = historyMatches(v);
-    if (matches.length === 0) { hideHistoryMenu(); return; }
     /* The menu only ever shows while the bar is focused. The input handler
        implies focus, but the pull hook can call this at any time (user
        clicked away, text still in the bar) — never pop the menu open then. */
     if (document.activeElement !== input) { hideHistoryMenu(); return; }
-    historyIndex = 0;   /* action row highlighted: Enter opens the typed URL */
+    /* Show the dropdown when there are history matches OR when the typed text
+       is a valid, openable URL — in the latter case the only row is the
+       "Abrir este URL…" action, so a brand-new URL with no history entry still
+       gets a visible way to open it. Only hide when the text is invalid AND
+       has no history matches. */
+    if (matches.length === 0 && !actionOpenable()) { hideHistoryMenu(); return; }
+    historyIndex = 0;   /* action row (or first match) highlighted */
     historyMenu.hidden = false;
     input.setAttribute('aria-expanded', 'true');
     renderHistoryMenu();
