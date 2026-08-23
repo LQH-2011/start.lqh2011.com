@@ -893,6 +893,65 @@ test('timers manager: delete the highlighted timer (x -> s) restores the logo', 
   await expect(page.locator('#timerList')).toBeHidden();
 });
 
+/* Deleting the bound timer must hand the display slot to the newly-selected
+   timer (the one just above the deleted row, or the new first row when the
+   first was deleted) instead of falling back to the clock/logo. */
+async function deleteTimerAndCheckSlot(page, digit, { remaining, newActiveId, newLogoRow }) {
+  await typeInBar(page, String(digit));          /* select & show that timer */
+  await typeInBar(page, 'x');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', '¿Borrar? (s/n)');
+  await typeInBar(page, 's');
+  await page.keyboard.press('Enter');
+  /* the deleted timer is gone */
+  expect(await timers(page)).toHaveLength(remaining);
+  /* the placeholder timer owns the slot now (not null -> not the clock/logo) */
+  expect(await activeTimerId(page)).toBe(newActiveId);
+  /* the logo shows the new active timer's live MM:SS, NOT the brand/clock */
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}$/);
+  /* and the manager's highlight follows to the newly-selected row */
+  await page.locator('#q').focus();
+  await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText(newLogoRow);
+}
+
+test('timers manager: deleting the FIRST timer binds the former second to the display slot', async ({ page }) => {
+  await page.goto('/');
+  await seedTimers(page, [
+    runningDown('t1', 'Alpha', 1500),
+    runningDown('t2', 'Bravo', 2500),
+    runningDown('t3', 'Charlie', 3500),
+  ], { active: 't1', visible: true });
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+  await deleteTimerAndCheckSlot(page, 1, { remaining: 2, newActiveId: 't2', newLogoRow: 'Bravo' });
+});
+
+test('timers manager: deleting a MIDDLE timer binds the timer above it to the display slot', async ({ page }) => {
+  await page.goto('/');
+  await seedTimers(page, [
+    runningDown('t1', 'Alpha', 1500),
+    runningDown('t2', 'Bravo', 2500),
+    runningDown('t3', 'Charlie', 3500),
+  ], { active: 't1', visible: true });
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+  await deleteTimerAndCheckSlot(page, 2, { remaining: 2, newActiveId: 't1', newLogoRow: 'Alpha' });
+});
+
+test('timers manager: deleting the LAST timer binds the timer above it to the display slot', async ({ page }) => {
+  await page.goto('/');
+  await seedTimers(page, [
+    runningDown('t1', 'Alpha', 1500),
+    runningDown('t2', 'Bravo', 2500),
+    runningDown('t3', 'Charlie', 3500),
+  ], { active: 't1', visible: true });
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+  await deleteTimerAndCheckSlot(page, 3, { remaining: 2, newActiveId: 't2', newLogoRow: 'Bravo' });
+});
+
 test('timers manager: z pauses/resumes, r resets the highlighted timer', async ({ page }) => {
   await page.goto('/');
 

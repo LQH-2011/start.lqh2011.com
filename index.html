@@ -980,17 +980,30 @@
       var tv = input.value.trim().toLowerCase();
       if ((tv === 's' || tv === 'y') && timers[ps.idx]) {
         var wasActive = timers[ps.idx].id === activeId;
-        timers.splice(ps.idx, 1);
+        var removedIdx = ps.idx;
+        timers.splice(removedIdx, 1);
         if (wasActive) {
-          activeId = null;
-          timerVisible = false;
           clearTimerFlash();
-          saveTimers();
-          ensureTimerTick();
-          if (clockOn) {
-            showClock();
-            if (!clockTimer) { clockTimer = setInterval(showClock, 1000); }
-          } else { showLogo(); }
+          if (timers.length > 0) {
+            /* The deleted timer was the one bound to the display slot: bind the
+               timer that takes its place — the one just above it, or the new
+               first row when the first was deleted — so the logo slot shows the
+               newly-selected timer instead of falling back to the clock. */
+            var sel = removedIdx - 1;
+            if (sel < 0) { sel = 0; }
+            timerIndex = sel;
+            showTimer(timers[sel]);
+          } else {
+            /* last timer deleted: nothing left to bind -> restore base view */
+            activeId = null;
+            timerVisible = false;
+            saveTimers();
+            ensureTimerTick();
+            if (clockOn) {
+              showClock();
+              if (!clockTimer) { clockTimer = setInterval(showClock, 1000); }
+            } else { showLogo(); }
+          }
         } else {
           saveTimers();
         }
