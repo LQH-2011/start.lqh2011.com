@@ -69,6 +69,12 @@ async function activeTimerId(page) {
 function runningDown(id, name, dur) {
   return { id, name, kind: 'down', dur, end: Date.now() + dur * 1000, start: null, paused: null };
 }
+function idleDown(id, name, dur) {
+  /* An idle countdown (no end/start) renders its configured duration
+     deterministically (dur -> MM:SS) — used so the successor's displayed value
+     is stable in tests instead of a racing live value. */
+  return { id, name, kind: 'down', dur, end: null, start: null, paused: null };
+}
 function runningUp(id, name) {
   return { id, name, kind: 'up', dur: null, end: null, start: Date.now(), paused: null };
 }
@@ -887,10 +893,81 @@ test('timers manager: delete the highlighted timer (x -> s) restores the logo', 
   await page.keyboard.press('Enter');
 
   expect(await timers(page)).toHaveLength(0);
+  /* the only timer was active -> its slot binding is cleared and the base view
+     (brand logo here) is restored, not a successor (none remains) */
+  expect(await activeTimerId(page)).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('start.timerVisible'))).toBe('0');
   /* the deleted timer was active -> logo restored */
   await expect(page.locator('#logo')).toHaveAttribute('aria-label', 'LQH-2011');
   /* empty list -> dropdown hidden */
   await expect(page.locator('#timerList')).toBeHidden();
+});
+
+/* Deleting the bound timer must hand the display slot to the newly-selected
+   timer (the one just above the deleted row, or the new first row when the
+   first was deleted) instead of falling back to the clock/logo. */
+async function deleteTimerAndCheckSlot(page, digit, { deletedId, remaining, newActiveId, newLogoLabel, newLogoRow }) {
+  await typeInBar(page, String(digit));          /* select & show that timer */
+  await typeInBar(page, 'x');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', '¿Borrar? (s/n)');
+  await typeInBar(page, 's');
+  await page.keyboard.press('Enter');
+  /* the deleted timer is GONE (exact record, not just a count) */
+  const after = await timers(page);
+  expect(after).toHaveLength(remaining);
+  expect(after.some(t => t.id === deletedId)).toBe(false);
+  /* the replacement timer owns the slot (not null -> not the clock/logo) */
+  expect(await activeTimerId(page)).toBe(newActiveId);
+  /* the logo shows the replacement timer's EXACT value (deterministic idle
+     countdown) — distinguishing it from the clock (HH:MM:SS), the brand
+     (LQH-2011) and any stale timer value left on screen */
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', newLogoLabel);
+  /* and the manager's highlight follows to the newly-selected row */
+  await page.locator('#q').focus();
+  await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText(newLogoRow);
+}
+
+test('timers manager: deleting the FIRST timer binds the former second to the display slot', async ({ page }) => {
+  await page.goto('/');
+  /* idle countdowns render their configured dur, so successor labels are exact */
+  await seedTimers(page, [
+    idleDown('t1', 'Alpha', 1500),      /* 25:00 */
+    idleDown('t2', 'Bravo', 2500),      /* 41:40 */
+    idleDown('t3', 'Charlie', 3500),    /* 58:20 */
+  ], { active: 't1', visible: true });
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+  await deleteTimerAndCheckSlot(page, 1, { deletedId: 't1', remaining: 2, newActiveId: 't2', newLogoLabel: '41:40', newLogoRow: 'Bravo' });
+});
+
+test('timers manager: deleting a MIDDLE timer binds the timer above it to the display slot', async ({ page }) => {
+  await page.goto('/');
+  await seedTimers(page, [
+    idleDown('t1', 'Alpha', 1500),
+    idleDown('t2', 'Bravo', 2500),
+    idleDown('t3', 'Charlie', 3500),
+  ], { active: 't1', visible: true });
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+  await deleteTimerAndCheckSlot(page, 2, { deletedId: 't2', remaining: 2, newActiveId: 't1', newLogoLabel: '25:00', newLogoRow: 'Alpha' });
+});
+
+test('timers manager: deleting the last row of a multi-timer list binds the timer above it to the display slot', async ({ page }) => {
+  /* deletes the LAST row of three (leaving two) -> replacement branch. The
+     empty-list / sole-timer branch is covered separately by the
+     'delete the highlighted timer ... restores the logo' test above. */
+  await page.goto('/');
+  await seedTimers(page, [
+    idleDown('t1', 'Alpha', 1500),
+    idleDown('t2', 'Bravo', 2500),
+    idleDown('t3', 'Charlie', 3500),
+  ], { active: 't1', visible: true });
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+  await deleteTimerAndCheckSlot(page, 3, { deletedId: 't3', remaining: 2, newActiveId: 't2', newLogoLabel: '41:40', newLogoRow: 'Bravo' });
 });
 
 test('timers manager: z pauses/resumes, r resets the highlighted timer', async ({ page }) => {
