@@ -1345,3 +1345,117 @@ test('sync indicator: a newer pull supersedes an in-flight one (generation guard
   await page.waitForTimeout(1800);
   await expect.poll(() => syncShown(page, '#syncIcon')).toBe(false);
 });
+
+/* ---------- local mode (no backend) ---------- */
+/* Logging in with the reserved password `local`/`test`/`debug` skips the API
+   entirely: no token, no pull, no push, all data stays in localStorage. The
+   mode is remembered across reloads (start.localMode) so the overlay never
+   returns. A banner at the bottom + a PERMANENT warning icon mark it — the
+   sync spinner/success-tick never appear. These tests use a fresh context
+   (no seeded token) so the auth overlay is up first. */
+
+/* Track any request that reaches the (nonexistent) API. */
+function trackApi(page) {
+  const reqs = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/api/')) reqs.push(r.url());
+  });
+  return reqs;
+}
+
+async function loginLocal(page, pw) {
+  await page.locator('#authPassword').fill(pw);
+  await page.locator('.auth-submit').click();
+  await expect(page.locator('#authOverlay')).toBeHidden();
+}
+
+test('local mode: "local" password logs in without the API (banner + permanent warn icon)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const apiReqs = trackApi(page);
+  await page.goto('/');
+
+  /* no token -> the overlay gates the page */
+  await expect(page.locator('#authOverlay')).toBeVisible();
+
+  await loginLocal(page, 'local');
+
+  /* logged in "just normal": the page is interactive and usable */
+  expect(await page.evaluate(() => document.querySelector('main').inert)).toBe(false);
+  await expect(page.locator('#urlIcon')).toBeVisible();
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Abrir URL…');
+
+  /* the banner tells the user they're in local mode */
+  await expect(page.locator('#localBanner')).toBeVisible();
+
+  /* the sync indicator is the PERMANENT warning icon — never the spinner/tick,
+     and it does NOT flash away (stays > 1.2s) */
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-warn')).toBe(true);
+  expect(await syncShown(page, '#syncIcon .sync-loading')).toBe(false);
+  expect(await syncShown(page, '#syncIcon .sync-ok')).toBe(false);
+  await page.waitForTimeout(1400);
+  expect(await syncShown(page, '#syncIcon .sync-warn')).toBe(true);
+
+  /* nothing ever reached the API */
+  expect(apiReqs).toEqual([]);
+
+  await ctx.close();
+});
+
+test('local mode: "test" and "debug" passwords also log in locally', async ({ browser }) => {
+  for (const pw of ['test', 'debug']) {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    const apiReqs = trackApi(page);
+    await page.goto('/');
+    await expect(page.locator('#authOverlay')).toBeVisible();
+
+    await loginLocal(page, pw);
+
+    await expect(page.locator('#localBanner')).toBeVisible();
+    await expect.poll(() => syncShown(page, '#syncIcon .sync-warn')).toBe(true);
+    expect(apiReqs).toEqual([]);
+
+    await ctx.close();
+  }
+});
+
+test('local mode: persists across reload (no overlay, banner + warn icon, no API)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const apiReqs = trackApi(page);
+  await page.goto('/');
+  await loginLocal(page, 'local');
+
+  /* isolate the reload: only requests made AFTER this point count */
+  apiReqs.length = 0;
+  await page.reload();
+
+  /* still in local mode: no overlay, banner up, permanent warn icon, no API */
+  await expect(page.locator('#authOverlay')).toBeHidden();
+  expect(await page.evaluate(() => document.querySelector('main').inert)).toBe(false);
+  await expect(page.locator('#localBanner')).toBeVisible();
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-warn')).toBe(true);
+  await page.waitForTimeout(1400);
+  expect(await syncShown(page, '#syncIcon .sync-warn')).toBe(true);
+  expect(apiReqs).toEqual([]);
+
+  await ctx.close();
+});
+
+test('local mode: the manual p pull is a no-op (no API request)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const apiReqs = trackApi(page);
+  await page.goto('/');
+  await loginLocal(page, 'local');
+
+  /* `p` pull from command mode must be a no-op in local mode */
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 'p');
+  await page.waitForTimeout(300);
+  expect(apiReqs).toEqual([]);
+  await expect(page.locator('#localBanner')).toBeVisible();
+
+  await ctx.close();
+});

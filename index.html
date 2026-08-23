@@ -267,6 +267,22 @@
   }
   .auth-submit:hover { opacity: .9; }
   .auth-note { font-size: 12px; color: var(--faint); text-align: center; }
+  /* ---------- local mode banner ---------- */
+  .local-banner {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+    background: rgba(128, 128, 128, .18);   /* gray backdrop */
+    border-top: 1px solid var(--line);
+    z-index: 5;
+    pointer-events: none;
+  }
+  .local-banner[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -379,6 +395,7 @@
     <p class="auth-note">Tus ajustes se sincronizan entre tus dispositivos.</p>
   </form>
 </div>
+<div class="local-banner" id="localBanner" hidden>Estás en modo local: los ajustes no se sincronizan y solo se guardan en este dispositivo.</div>
 <script>
 (function () {
   'use strict';
@@ -2142,6 +2159,15 @@
   var passInput = document.getElementById('authPassword');
   var authError = document.getElementById('authError');
   var main = document.querySelector('main');
+  var localBanner = document.getElementById('localBanner');
+
+  /* Local mode (no backend): logging in with the password `local`, `test` or
+     `debug` skips the API entirely — there is no token, no pull and no push.
+     Everything stays in localStorage (the page is already local-first), and
+     the mode is remembered across reloads via start.localMode so the overlay
+     doesn't come back. A banner + a permanent warning icon mark the mode. */
+  var LOCAL_KEY = 'start.localMode';
+  var LOCAL_PASSWORDS = ['local', 'test', 'debug'];
 
   var token = null;
   var readyToPush = false;
@@ -2208,6 +2234,20 @@
   /* ---------- auth ---------- */
   function dropToken() { lsDel(TOKEN_KEY); token = null; }
 
+  /* Enter/keep the page in local mode: log in (hide the overlay, un-inert the
+     page), remember the mode across reloads, and run WITHOUT the backend. The
+     token is dropped so no stale token can trigger a pull/push. The sync
+     indicator shows the warning icon PERMANENTLY (showSyncIcon, not the
+     flash variant) and never the spinner/success-tick. */
+  function enterLocalMode() {
+    lsSet(LOCAL_KEY, '1');
+    dropToken();
+    hideOverlay();
+    localBanner.hidden = false;
+    showSyncIcon('warn');
+  }
+  function isLocalMode() { return lsGet(LOCAL_KEY) === '1'; }
+
   var authSubmit = authForm.querySelector('.auth-submit');
   authForm.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -2215,6 +2255,14 @@
     if (!password || authSubmit.disabled) return;
     authSubmit.disabled = true;   /* no concurrent auth attempts (rate limit) */
     authError.textContent = '';
+    /* Local mode: the reserved passwords `local`/`test`/`debug` log in WITHOUT
+       calling the API — no token, no server, everything stays in localStorage. */
+    if (LOCAL_PASSWORDS.indexOf(password.trim().toLowerCase()) !== -1) {
+      passInput.value = '';
+      enterLocalMode();
+      authSubmit.disabled = false;
+      return;
+    }
     fetch(API_BASE + '/api/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2246,7 +2294,7 @@
      load-time pull, but NEVER reloads — the main IIFE applies the merged
      state live through window.__startOnPull (static state + data UI). */
   function syncFromServer(manual) {
-    if (!token) return;
+    if (!token || isLocalMode()) return;
     /* this pull owns the indicator only while it stays the latest */
     var gen = ++syncGen;
     /* show the cycle-arrow while the pull is in flight */
@@ -2314,7 +2362,7 @@
     sendChanges(true);
   });
   function sendChanges(flush) {
-    if (!token || !readyToPush) return;
+    if (!token || !readyToPush || isLocalMode()) return;
     var ts = readTs();
     var items = {};
     SYNC_KEYS.forEach(function (k) {
@@ -2366,7 +2414,10 @@
                           { once: true, capture: true });
 
   token = lsGet(TOKEN_KEY);
-  if (token) { syncFromServer(false); }
+  /* start.localMode persists the no-backend mode, so a reload stays local and
+     never shows the overlay or talks to the API. */
+  if (isLocalMode()) { enterLocalMode(); }
+  else if (token) { syncFromServer(false); }
   else { showOverlay(); }
 })();
 </script>

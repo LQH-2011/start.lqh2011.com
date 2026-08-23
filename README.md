@@ -194,6 +194,13 @@ after that the device holds a token and behaves exactly as before.
   the page wipes `localStorage` and `sessionStorage` — token included — and
   reloads, so the overlay returns on that device (the synced data stays in
   the DB for the other devices). Any other response on Enter cancels.
+- **Local mode (no backend)**: typing `local`, `test` or `debug` as the password
+  logs you in **without contacting the API** — no token, no pull, no push; all
+  settings and bookmarks stay in `localStorage` only. The mode is remembered
+  across reloads (`start.localMode`), so the overlay doesn't come back. A banner
+  at the bottom (gray backdrop) tells you you're in local mode, and the typing
+  bar shows the **warning icon permanently** instead of the sync spinner/tick.
+  Log out (`x` in settings) to wipe local state and return to the password gate.
 - **Pull on load**: after auth, settings are pulled from the DB and merged into
   `localStorage` — **last-write-wins per key by timestamp** (each value carries an
   epoch-ms timestamp; a newer local value is never clobbered, and an older server
@@ -219,8 +226,9 @@ after that the device holds a token and behaves exactly as before.
   `start.theme`, which is device-specific (each device keeps its own
   system/light/dark choice in `localStorage`). The sync bookkeeping itself lives
   in `localStorage` under `start.sync.ts` (per-key timestamps) and is never uploaded.
-- **No visible chrome**: no status indicators were added — the page looks identical.
-  Sync failures are silent (console) and self-healing.
+- **No visible chrome (connected mode)**: no status indicators — the page looks identical.
+  Sync failures are silent (console) and self-healing. (The one exception is
+  **local mode**, which intentionally shows a banner + a permanent warning icon.)
 
 ## Editing the logo
 
@@ -266,6 +274,10 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
 - `start.token` — the sync session token (set after the one-time password; drives
   the auth overlay and the API calls). It is sent to the API as a bearer token
   and is never included in the synchronized key/value payload.
+- `start.localMode` — `1` when the page runs **without the backend** (logged in
+  with the password `local`/`test`/`debug`). Never synced; when present, the page
+  skips the overlay, the pull and the push entirely and shows a banner + a
+  permanent warning icon.
 - `start.sync.ts` — sync bookkeeping: a JSON map of key → epoch-ms timestamp
   (last-known write time per synced key). Used for last-write-wins merging; never
   uploaded itself.
