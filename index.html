@@ -105,6 +105,28 @@
     font-size: 15px;
     line-height: 1;
   }
+  /* Sync status indicator: a small icon on the RIGHT of the bar that reflects
+     the sync module's state — a spinning cycle-arrow while a pull is in
+     flight, then a tick (success) or a warning (failure) that flashes and
+     disappears. pointer-events:none so it never blocks typing; the mode icons
+     on the LEFT are unaffected. Visibility is driven by inline style.display
+     (NOT the `hidden` attribute) because Chromium does not reliably reflect
+     `hidden` on <svg> elements into CSS. */
+  .sync-icon {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+    display: flex;
+  }
+  .sync-icon svg { display: none; }
+  @keyframes sync-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .sync-icon .sync-loading { animation: sync-spin .8s linear infinite; }
   .search input {
     -webkit-appearance: none;
     appearance: none;
@@ -317,6 +339,23 @@
            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3.5"/>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </span>
+    <span class="sync-icon" id="syncIcon" aria-hidden="true" hidden>
+      <svg class="sync-loading" width="15" height="15" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+      </svg>
+      <svg class="sync-ok" width="15" height="15" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" hidden>
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+      <svg class="sync-warn" width="15" height="15" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" hidden>
+        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
       </svg>
     </span>
     <label class="sr-only" for="q">Abrir URL o buscar</label>
@@ -2055,6 +2094,35 @@
   function readTs() { try { return JSON.parse(lsGet(TS_KEY) || '{}'); } catch (e) { return {}; } }
   function writeTs(map) { lsSet(TS_KEY, JSON.stringify(map)); }
 
+  /* ---------- sync status indicator (typing bar) ---------- */
+  /* A small icon on the right of the search bar reflects the sync state: a
+     spinning cycle-arrow while a pull is in flight, then a tick (success) or
+     a warning (failure) that flashes for a moment and disappears. It shows on
+     the first load (and on the manual `p` pull / post-auth sync), and never
+     blocks typing (pointer-events:none). */
+  var syncIcon = document.getElementById('syncIcon');
+  var syncLoading = syncIcon.querySelector('.sync-loading');
+  var syncOk = syncIcon.querySelector('.sync-ok');
+  var syncWarn = syncIcon.querySelector('.sync-warn');
+  var syncFlashTimer = null;
+  /* Show exactly one child icon (or none) and show/hide the container. The
+     icon container starts `hidden` (display:none via the UA [hidden] rule);
+     once a sync runs we drive display via inline style so the per-state icon
+     reliably paints (the `hidden` attribute is unreliable on <svg>). */
+  function showSyncIcon(state) {
+    if (syncFlashTimer) { clearTimeout(syncFlashTimer); syncFlashTimer = null; }
+    syncLoading.style.display = (state === 'loading') ? 'block' : 'none';
+    syncOk.style.display = (state === 'ok') ? 'block' : 'none';
+    syncWarn.style.display = (state === 'warn') ? 'block' : 'none';
+    syncIcon.style.display = state ? 'flex' : 'none';
+  }
+  /* Briefly flash an ok/warn result, then hide the icon. */
+  function flashSyncResult(state) {
+    showSyncIcon(state);
+    if (syncFlashTimer) { clearTimeout(syncFlashTimer); }
+    syncFlashTimer = setTimeout(function () { syncIcon.style.display = 'none'; }, 1200);
+  }
+
   /* ---------- overlay ---------- */
   function showOverlay(msg) {
     overlay.hidden = false;
@@ -2109,11 +2177,13 @@
      state live through window.__startOnPull (static state + data UI). */
   function syncFromServer(manual) {
     if (!token) return;
+    /* show the cycle-arrow while the pull is in flight */
+    showSyncIcon('loading');
     fetch(API_BASE + '/api/data', {
       headers: { 'Authorization': 'Bearer ' + token }
     }).then(function (r) {
-      if (r.status === 401) { dropToken(); showOverlay(); return; }
-      if (!r.ok) { readyToPush = true; return; }
+      if (r.status === 401) { dropToken(); showOverlay(); flashSyncResult('warn'); return; }
+      if (!r.ok) { readyToPush = true; flashSyncResult('warn'); return; }
       return r.json().then(function (data) {
         var items = (data && data.items) || {};
         var ts = readTs();
@@ -2137,12 +2207,15 @@
           if (window.__startOnPull) { window.__startOnPull(manual); }
           if (!manual && !interacted) { location.reload(); return; }
         }
+        /* sync landed (and won't reload): flash the success tick */
+        flashSyncResult('ok');
         /* flush local changes that never made it out (tab closed before the
            debounce fired): pull with no merge = server is older, push now */
         schedulePush();
       });
     }).catch(function () {
       readyToPush = true;   /* offline: local-first, retry on next change/load */
+      flashSyncResult('warn');
     });
   }
 
