@@ -954,7 +954,10 @@ test('timers manager: deleting a MIDDLE timer binds the timer above it to the di
   await deleteTimerAndCheckSlot(page, 2, { deletedId: 't2', remaining: 2, newActiveId: 't1', newLogoLabel: '25:00', newLogoRow: 'Alpha' });
 });
 
-test('timers manager: deleting the LAST timer binds the timer above it to the display slot', async ({ page }) => {
+test('timers manager: deleting the last row of a multi-timer list binds the timer above it to the display slot', async ({ page }) => {
+  /* deletes the LAST row of three (leaving two) -> replacement branch. The
+     empty-list / sole-timer branch is covered separately by the
+     'delete the highlighted timer ... restores the logo' test above. */
   await page.goto('/');
   await seedTimers(page, [
     idleDown('t1', 'Alpha', 1500),
