@@ -1180,3 +1180,91 @@ test('auth overlay gates the page without a token', async ({ browser }) => {
 
   await ctx.close();
 });
+
+/* ---------- sync status indicator (typing bar) ---------- */
+/* The page runs a pull on load when a token is present. The typing bar shows a
+   spinning cycle-arrow while the pull is in flight, then a success tick or a
+   warning that flashes and disappears. The static server would 404 /api/data,
+   so these tests route it to control the outcome (and hold it open briefly so
+   the spinner is observable). Visibility is read from getComputedStyle().display
+   (not the `hidden` attribute), which is the reliable signal for <svg> icons. */
+
+function syncShown(page, sel) {
+  return page.evaluate((s) => {
+    const el = document.querySelector(s);
+    return el ? getComputedStyle(el).display !== 'none' : null;
+  }, sel);
+}
+
+test('sync indicator: spinner on load, then a success tick that disappears (routed 200)', async ({ page }) => {
+  /* hold the pull open so the cycle-arrow spinner is visible; an empty body
+     means no merge, no reload — just a success tick */
+  await page.route('**/api/data', async (route) => {
+    await new Promise((r) => setTimeout(r, 700));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await page.goto('/');
+
+  /* the cycle-arrow (spinner) is visible while the pull is in flight */
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-loading')).toBe(true);
+
+  /* the pull lands -> the success tick flashes, then the icon disappears */
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-ok')).toBe(true);
+  await expect.poll(() => syncShown(page, '#syncIcon')).toBe(false);
+});
+
+test('sync indicator: warning on a failed pull, then disappears (routed 404)', async ({ page }) => {
+  await page.route('**/api/data', async (route) => {
+    await new Promise((r) => setTimeout(r, 700));
+    await route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"not_found"}' });
+  });
+  await page.goto('/');
+
+  /* spinner first */
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-loading')).toBe(true);
+
+  /* then the warning flashes, and disappears */
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-warn')).toBe(true);
+  await expect.poll(() => syncShown(page, '#syncIcon')).toBe(false);
+});
+
+test('sync indicator: merging new data flashes the success tick (before any reload)', async ({ page }) => {
+  /* a newer item (ts > the local, empty start.sync.ts) makes `changed` true, so
+     the automatic pull reloads to apply it — but the success tick must be shown
+     FIRST, then the reload fires after the flash. */
+  await page.route('**/api/data', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ items: { 'start.mode': { v: 'url', ts: 1234567890 } } })
+  }));
+  await page.goto('/');
+
+  /* the tick is visible for the pull that merged the new data, before reload */
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-ok')).toBe(true);
+});
+
+test('sync indicator: a newer pull supersedes an in-flight one (generation guard)', async ({ page }) => {
+  let count = 0;
+  await page.route('**/api/data', async (route) => {
+    count += 1;
+    if (count === 1) {
+      /* the initial load pull is held open; the manual p pull (2nd) resolves first */
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await page.goto('/');
+
+  /* the load pull (1st) is in flight; trigger a manual p pull (2nd, fast) */
+  await page.locator('#q').focus();
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 'p');
+
+  /* the 2nd pull resolves -> success tick flashes, then the icon hides */
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-ok')).toBe(true);
+  await expect.poll(() => syncShown(page, '#syncIcon')).toBe(false);
+
+  /* the (superseded) 1st pull completes later; the generation guard drops its
+     result, so it must NOT re-show the icon/spinner */
+  await page.waitForTimeout(1800);
+  await expect.poll(() => syncShown(page, '#syncIcon')).toBe(false);
+});
