@@ -465,9 +465,9 @@
      x logout, r reset
      links (gear) — bookmarks: 1-9 open, a add, e edit, x delete
      timers (⏱) — a visible dropdown listing every named timer (name, UP/DOWN,
-     live MM:SS/HH:MM:SS); ↑/↓ (and Enter) move the highlight and show the
-     highlighted timer in the slot, 1-9 select & show (1 = first), a add,
-     e rename, x delete, y start, z pause/resume, r reset, c/k toggles
+     live MM:SS/HH:MM:SS); ↑/↓ (and digits 1-9) select & show the highlighted
+     timer in the slot, Enter (or `y`) starts it, a add, e rename, x delete,
+     z pause/resume, r reset, c/k toggles
      timer — countdown/count-up value entry (quick path)
      topMode is the selected url/search mode, persisted as start.mode. */
   /** Placeholder for a mode — single source of truth so the prompt flows
@@ -928,7 +928,7 @@
           timers.push(ut);
           timerIndex = timers.length - 1;
           exitPrompt();
-          showTimer(ut);
+          startTimer(ut);
           updateTimerMenu();
           return;
         }
@@ -948,7 +948,7 @@
       timers.push(dt);
       timerIndex = timers.length - 1;
       exitPrompt();
-      showTimer(dt);
+      startTimer(dt);
       updateTimerMenu();
       return;
     }
@@ -1451,10 +1451,11 @@
      named timer with its name, a UP/DOWN badge and a live MM:SS/HH:MM:SS
      reading — ticking for running timers, static for paused/stopped ones. ↑/↓
      move the highlight AND show the highlighted timer in the display slot (like
-     `1`-`9`); Enter binds the highlighted timer too. `a` add (name -> type ->
-     duration), `e` rename (-> duration), `x` delete (confirm), `y` start, `z`
-     pause/resume, `r` reset; `c`/`k` toggles. The multi-step add/edit/delete
-     flows reuse the single bar + promptState. */
+     `1`-`9`); Enter starts the highlighted timer straight away (the same as
+     `y`). `a` add (name -> type -> duration, and the new timer STARTS running
+     the moment it is created), `e` rename (-> duration), `x` delete (confirm),
+     `y` start, `z` pause/resume, `r` reset; `c`/`k` toggles. The multi-step
+     add/edit/delete flows reuse the single bar + promptState. */
   var timerIndex = 0;   /* highlighted row in the dropdown (0-based); arrows & 1-9 show it */
 
   /** Return the index of the timer currently bound to the display slot, or -1. */
@@ -1979,7 +1980,7 @@
     if (mode === 'timers') {
       e.preventDefault();
       if (promptState) { commitPrompt(); }
-      else if (timers.length) { selectTimerAt(timerIndex); }
+      else if (timers.length) { startTimerAt(timerIndex); }
       else { exitToTop(); input.value = ''; }
       return;
     }

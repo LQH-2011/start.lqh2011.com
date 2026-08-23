@@ -90,8 +90,10 @@ async function backToCommand(page) {
   await page.keyboard.press('Backspace');   /* settings -> command */
 }
 /* Add a named timer via the manager (command `t` -> `a` -> name -> kind -> dur).
-   Assume the bar is already in command mode; the flow ends in timers mode with
-   the new timer highlighted. `start` presses `y` so the timer is RUNNING. */
+   The new timer STARTS RUNNING the moment it is added (see tadd flow), so the
+   flow ends in timers mode with the new timer highlighted AND running.
+   `start` is accepted for backward compatibility with callers that pressed `y`
+   — pressing it again just restarts the (already-running) timer. */
 async function addTimer(page, { name = 'Temporizador', kind = 'down', dur = '25', start = false }) {
   await typeInBar(page, 't');       /* timers manager */
   await typeInBar(page, 'a');       /* add flow */
@@ -103,7 +105,7 @@ async function addTimer(page, { name = 'Temporizador', kind = 'down', dur = '25'
     await typeInBar(page, dur);
     await page.keyboard.press('Enter');        /* commit duration */
   }
-  if (start) { await typeInBar(page, 'y'); }   /* start the new (highlighted) timer */
+  if (start) { await typeInBar(page, 'y'); }   /* (re)start the highlighted timer */
   return timers(page);
 }
 
@@ -558,10 +560,10 @@ test('timer: x confirm from COMMAND mode kills the timer and returns to command 
 test('timer: finished countdown flashes, flips to count-up (stays kind down), then settles', async ({ page }) => {
   await page.goto('/');
 
-  /* 1-second countdown (0:01) so the elapse happens fast */
+  /* 1-second countdown (0:01) so the elapse happens fast. The add flow now
+     STARTS the timer, so no separate `y` is needed. */
   await typeInBar(page, 'aaa');
   await addTimer(page, { name: 'Temporizador', kind: 'down', dur: '0:01' });
-  await typeInBar(page, 'y');   /* start it (highlighted) so the elapse happens */
   const end = (await timers(page))[0].end;
   expect(end).toBeGreaterThan(Date.now());
 
@@ -683,7 +685,47 @@ test('timers: arrow keys move the highlight AND show the selected timer (matches
   await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText('Two');
 });
 
-test('timers manager: settings -> t, add a named countdown', async ({ page }) => {
+test('timers manager: Enter on the highlighted timer starts it (same as y)', async ({ page }) => {
+  await page.goto('/');
+  /* two IDLE countdowns — moving the highlight to the SECOND timer and starting
+     it proves Enter honours timerIndex (a regression that always starts the
+     ACTIVE timer would wrongly start t1). */
+  await seedTimers(page, [
+    { id: 't1', name: 'Pomodoro', kind: 'down', dur: 25 * 60, end: null, start: null, paused: null },
+    { id: 't2', name: 'Coffee', kind: 'down', dur: 10 * 60, end: null, start: null, paused: null }
+  ], { active: 't1', visible: true });
+
+  await typeInBar(page, 'aaa');
+  await typeInBar(page, 's');
+  await typeInBar(page, 't');
+  await expect(page.locator('#timerList')).toBeVisible();
+  /* the highlight starts on the active timer (t1 -> 25:00); both are idle */
+  await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText('Pomodoro');
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '25:00');
+  let list = await timers(page);
+  expect(list[0].end).toBeNull();
+  expect(list[1].end).toBeNull();
+
+  /* move the highlight onto the SECOND timer (t2 -> 10:00) */
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#timerList .timer-row.active .timer-name')).toHaveText('Coffee');
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '10:00');
+  expect(await activeTimerId(page)).toBe('t2');
+
+  /* Enter (no `y`) starts the HIGHLIGHTED timer (t2), leaving t1 idle */
+  await page.keyboard.press('Enter');
+  list = await timers(page);
+  expect(list[1].end).toBeGreaterThan(Date.now());   /* t2 running */
+  expect(list[1].start).toBeNull();
+  expect(list[1].paused).toBeNull();
+  expect(list[0].end).toBeNull();                    /* t1 still idle */
+  expect(list[0].start).toBeNull();
+  /* the slot shows the started timer counting down; the bar stays in timers mode */
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}$/);
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Temporizadores…');
+});
+
+test('timers manager: settings -> t, add a named countdown (starts running)', async ({ page }) => {
   await page.goto('/');
 
   await typeInBar(page, 'aaa');
@@ -707,17 +749,20 @@ test('timers manager: settings -> t, add a named countdown', async ({ page }) =>
   expect(list[0].name).toBe('Pomodoro');
   expect(list[0].kind).toBe('down');
   expect(list[0].dur).toBe(25 * 60);
+  /* the new countdown STARTS the moment it's added — no separate `y` needed */
+  expect(list[0].end).toBeGreaterThan(Date.now());
+  expect(list[0].start).toBeNull();
   expect(await activeTimerId(page)).toBe(list[0].id);
-  /* the new timer owns the slot and shows its configured 25:00 */
-  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '25:00');
+  /* the new timer owns the slot and shows a live countdown */
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}$/);
   /* and it appears in the dropdown */
   await expect(page.locator('#timerList .timer-row')).toHaveCount(1);
   await expect(page.locator('#timerList .timer-name').first()).toHaveText('Pomodoro');
   await expect(page.locator('#timerList .timer-kind').first()).toHaveText('DOWN');
-  await expect(page.locator('#timerList .timer-time').first()).toHaveText('25:00');
+  await expect(page.locator('#timerList .timer-time').first()).toHaveText(/^\d{2}:\d{2}$/);
 });
 
-test('timers manager: add a named count-up (shows 00:00 when idle)', async ({ page }) => {
+test('timers manager: add a named count-up (starts running, shows a live time)', async ({ page }) => {
   await page.goto('/');
 
   await typeInBar(page, 'aaa');
@@ -733,11 +778,13 @@ test('timers manager: add a named count-up (shows 00:00 when idle)', async ({ pa
   expect(list).toHaveLength(1);
   expect(list[0].name).toBe('Deep work');
   expect(list[0].kind).toBe('up');
-  expect(list[0].start).toBeNull();
-  /* idle count-up shows 00:00 */
-  await expect(page.locator('#logo')).toHaveAttribute('aria-label', '00:00');
+  /* the new count-up STARTS counting the moment it's added */
+  expect(list[0].start).toBeGreaterThan(0);
+  expect(list[0].end).toBeNull();
+  /* the slot shows a live (counting up) time, not a frozen 00:00 */
+  await expect(page.locator('#logo')).toHaveAttribute('aria-label', /^\d{2}:\d{2}$/);
   await expect(page.locator('#timerList .timer-kind').first()).toHaveText('UP');
-  await expect(page.locator('#timerList .timer-time').first()).toHaveText('00:00');
+  await expect(page.locator('#timerList .timer-time').first()).toHaveText(/^\d{2}:\d{2}$/);
 });
 
 test('timers manager: rename the highlighted timer (e -> name -> Enter -> Enter)', async ({ page }) => {
