@@ -389,14 +389,73 @@ test('url mode opens normalized URLs, records history, rejects dangerous schemes
   await expect(page.locator('#q')).toHaveJSProperty('value', 'javascript:alert(1)');
 });
 
+test('invalid URL in url mode does not open on Enter (garbage is blocked)', async ({ page }) => {
+  await page.goto('/');
+
+  /* a bare word with no dot is not a usable URL — Enter must NOT open https://hola */
+  await typeInBar(page, 'hola');
+  await page.keyboard.press('Enter');
+  expect(await opened(page)).toEqual([]);
+  await expect(page.locator('#q')).toHaveJSProperty('value', 'hola');
+
+  /* whitespace is never a URL — Enter must NOT open https://foo bar */
+  await typeInBar(page, 'foo bar');
+  await page.keyboard.press('Enter');
+  expect(await opened(page)).toEqual([]);
+  await expect(page.locator('#q')).toHaveJSProperty('value', 'foo bar');
+
+  /* syntactically invalid DNS labels (labels that start/end with a hyphen, or
+     empty labels) are not usable URLs — Enter must NOT open them */
+  for (const bad of ['-.-', 'foo-.com', 'foo.-com', 'example..com']) {
+    await typeInBar(page, bad);
+    await page.keyboard.press('Enter');
+    expect(await opened(page)).toEqual([]);
+    await expect(page.locator('#q')).toHaveJSProperty('value', bad);
+  }
+});
+
+test('valid URL with no matching history entry shows "Abrir este URL…" and Enter opens it', async ({ page }) => {
+  await page.goto('/');
+
+  /* example.com is a valid URL but matches none of the seeded history entries;
+     the dropdown should still render the action row so the URL is openable. */
+  await typeInBar(page, 'example.com');
+  await expect(page.locator('#urlHistory')).toBeVisible();
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(1);
+  await expect(page.locator('#urlHistory .url-history-item').first()).toHaveText('Abrir este URL…');
+
+  await page.keyboard.press('Enter');
+  expect(await opened(page)).toEqual(['https://example.com']);
+  await expect(page.locator('#q')).toHaveJSProperty('value', '');
+  await expect(page.locator('#urlHistory')).toBeHidden();
+});
+
+test('invalid (bare-label) input with a history match omits the "Abrir este URL…" row and opens the match', async ({ page }) => {
+  await page.goto('/');
+
+  /* "git" is not an openable URL (no dot), but it matches github.com/lqh-2011
+     in the seeded history. No action row is rendered — the dropdown shows only
+     the matching history entry, and Enter opens THAT, never https://git. */
+  await typeInBar(page, 'git');
+  await expect(page.locator('#urlHistory')).toBeVisible();
+  await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(1);
+  await expect(page.locator('#urlHistory .url-history-item').first()).toHaveText('github.com/lqh-2011');
+  /* the match is the default highlight, so Enter opens it directly */
+  await page.keyboard.press('Enter');
+  expect(await opened(page)).toEqual(['https://github.com/lqh-2011']);
+  await expect(page.locator('#q')).toHaveJSProperty('value', '');
+  await expect(page.locator('#urlHistory')).toBeHidden();
+});
+
 /* ---------- history dropdown ---------- */
 
 test('history dropdown: "Abrir este URL…" first, arrows navigate, Enter opens the highlighted row', async ({ page }) => {
   await page.goto('/');
 
-  await typeInBar(page, 'git');
+  await typeInBar(page, 'github.com');
   await expect(page.locator('#urlHistory')).toBeVisible();
-  /* row 0 is the action row; the matching history entry follows */
+  /* row 0 is the action row (the typed text is a valid URL); the matching
+     history entry follows */
   await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(2);
   await expect(page.locator('#urlHistory .url-history-item').first()).toHaveText('Abrir este URL…');
   await expect(page.locator('#urlHistory .url-history-item').nth(1)).toHaveText('github.com/lqh-2011');
@@ -405,7 +464,7 @@ test('history dropdown: "Abrir este URL…" first, arrows navigate, Enter opens 
   await expect(page.locator('#urlHistory')).toBeHidden();
 
   /* ArrowDown moves the highlight onto the history entry; Enter opens it */
-  await typeInBar(page, 'git');
+  await typeInBar(page, 'github.com');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   expect(await opened(page)).toEqual(['https://github.com/lqh-2011']);
@@ -459,7 +518,7 @@ test('d deletes the highlighted history entry and re-renders the dropdown', asyn
 test('modified d (Ctrl+D) does not delete the highlighted history entry', async ({ page }) => {
   await page.goto('/');
 
-  await typeInBar(page, 'git');
+  await typeInBar(page, 'github.com');
   await expect(page.locator('#urlHistory .url-history-item')).toHaveCount(2);
   await page.keyboard.press('ArrowDown');   /* highlight github.com/lqh-2011 */
   await page.keyboard.press('Control+d');   /* browser bookmark shortcut */
