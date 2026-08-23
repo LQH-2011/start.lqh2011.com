@@ -532,6 +532,29 @@ test('timer: command t opens the manager; z pauses/resumes, r resets, x deletes 
   await expect(page.locator('#logo')).toHaveAttribute('aria-label', 'LQH-2011');
 });
 
+test('timer: x confirm from COMMAND mode kills the timer and returns to command mode (Comando… placeholder)', async ({ page }) => {
+  await page.goto('/');
+  /* a timer is already active on load */
+  await seedTimers(page, [runningDown('t1', 'Pomodoro', 1500)], { active: 't1', visible: true });
+
+  /* direct: enter command mode (active timer owns the slot) */
+  await typeInBar(page, 'aaa');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Comando…');
+
+  /* x arms the delete confirm; s confirms; Enter commits the prompt */
+  await typeInBar(page, 'x');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', '¿Borrar? (s/n)');
+  await typeInBar(page, 's');
+  await page.keyboard.press('Enter');
+
+  /* killed */
+  expect(await timers(page)).toHaveLength(0);
+  expect(await activeTimerId(page)).toBeNull();
+
+  /* the bar is STILL in command mode — not 'Favoritos…' */
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Comando…');
+});
+
 test('timer: finished countdown flashes, flips to count-up (stays kind down), then settles', async ({ page }) => {
   await page.goto('/');
 

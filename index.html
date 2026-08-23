@@ -470,6 +470,18 @@
      e rename, x delete, y start, z pause/resume, r reset, c/k toggles
      timer — countdown/count-up value entry (quick path)
      topMode is the selected url/search mode, persisted as start.mode. */
+  /** Placeholder for a mode — single source of truth so the prompt flows
+      (exitPrompt) and mode changes (setMode) can't diverge. */
+  function placeholderFor(next) {
+    if (next === 'url') return 'Abrir URL…';
+    if (next === 'search') return ENGINES[engine].ph;
+    if (next === 'command') return 'Comando…';
+    if (next === 'settings') return 'Ajustes…';
+    if (next === 'links') return 'Favoritos…';
+    if (next === 'timers') return 'Temporizadores…';
+    if (next === 'timer') return 'Temporizador';
+    return 'Abrir URL…';
+  }
   function setMode(next) {
     mode = next;
     hideHistoryMenu();
@@ -478,13 +490,7 @@
     cmdIndicator.hidden = next !== 'command';
     settingsIcon.hidden = (next !== 'settings' && next !== 'links');
     timerIcon.hidden = (next !== 'timer' && next !== 'timers');
-    if (next === 'url') { input.placeholder = 'Abrir URL…'; }
-    else if (next === 'search') { input.placeholder = ENGINES[engine].ph; }
-    else if (next === 'command') { input.placeholder = 'Comando…'; }
-    else if (next === 'settings') { input.placeholder = 'Ajustes…'; }
-    else if (next === 'links') { input.placeholder = 'Favoritos…'; }
-    else if (next === 'timers') { input.placeholder = 'Temporizadores…'; }
-    else if (next === 'timer') { input.placeholder = 'Temporizador'; }
+    input.placeholder = placeholderFor(next);
     updateTimerMenu();
   }
   function enterCmd() { setMode('command'); input.value = ''; }
@@ -768,8 +774,7 @@
   function exitPrompt() {
     promptState = null;
     input.value = '';
-    input.placeholder = (mode === 'settings') ? 'Ajustes…' :
-                        (mode === 'timers') ? 'Temporizadores…' : 'Favoritos…';
+    input.placeholder = placeholderFor(mode);
   }
   function cancelPrompt() { exitPrompt(); }
   function startAdd() {
