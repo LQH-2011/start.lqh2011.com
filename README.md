@@ -238,7 +238,7 @@ DB as the sync backend (single-user; you must be logged in with a synced token).
 - **Enter**: in command mode press `j`. The logo collapses and the search bar
   docks to the bottom with smooth transitions; the left mode indicator becomes
   a hamburger and the right sync icon is replaced by a send (up-arrow) button.
-  The placeholder is `Ask something...`. **Exit**: type `/` then `x` — it returns
+  The placeholder is `Pregunta algo...`. **Exit**: type `/` then `x` — it returns
   to command mode with the normal logo/bar layout.
 - **Send**: type in the bar and press Enter (or click the arrow). The reply
   streams in as it's generated; both the user message and the bot reply are
@@ -246,9 +246,9 @@ DB as the sync backend (single-user; you must be logged in with a synced token).
 - **Per-message actions**: copy and delete under *every* message; regenerate
   under bot messages. All write through the API.
 - **Session sidebar**: a hamburger at the top-left slides in the past sessions,
-  sorted by most-recent use and grouped into *Today / Yesterday / This Week /
-  Earlier*. Clicking a session loads its thread; the title is generated from the
-  first message of the thread. A **New chat** button at the top of the sidebar
+  sorted by most-recent use and grouped into *Hoy / Ayer / Esta semana /
+  Anteriores*. Clicking a session loads its thread; the title is generated from the
+  first message of the thread. Un botón **Nueva conversación** at the top of the sidebar
   starts a fresh thread, and a blank thread shows the "Think before you ask."
   block-art welcome (same 5×7 pixel-glyph style as the logo, at quarter scale).
 - **Persistence**: sessions + messages live in Neon (`chat_sessions`,

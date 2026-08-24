@@ -93,7 +93,7 @@ test('j enters AI chat: logo collapses, bar docks to bottom, hamburger + send ar
   await expect(page.locator('.chat-indicator')).toBeVisible();
   await expect(page.locator('#searchIcon')).toBeHidden();
   /* the left mode indicator is the hamburger; placeholder is the chat prompt */
-  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Ask something...');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Pregunta algo...');
   /* the send arrow replaces the sync icon */
   await expect(page.locator('#chatSendBtn')).toBeVisible();
   await expect(page.locator('#syncIcon')).toBeHidden();
@@ -107,7 +107,7 @@ test('exiting chat via / then x returns to command mode and restores the layout'
   await enterChat(page);
 
   await typeInBar(page, '/');
-  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Exit chat… (x)');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Salir del chat… (x)');
 
   await typeInBar(page, 'x');
   await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Comando…');
@@ -140,7 +140,7 @@ test('sidebar toggle slides in and folds; session list is grouped by time', asyn
   /* grouped headings, in order */
   await expect(page.locator('.chat-session-item')).toHaveCount(4);
   const labels = await page.locator('.chat-session-group').allTextContents();
-  expect(labels).toEqual(['Today', 'Yesterday', 'This Week', 'Earlier']);
+  expect(labels).toEqual(['Hoy', 'Ayer', 'Esta semana', 'Anteriores']);
   await expect(page.locator('.chat-session-item').first()).toHaveText('Today query');
 
   /* clicking again folds it */

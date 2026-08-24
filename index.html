@@ -639,8 +639,8 @@
   </g>
 </svg>
   <div id="chatView" hidden>
-    <button id="chatSidebarToggle" class="icon-btn" aria-label="Show sessions"
-            title="Sessions" aria-expanded="false">
+    <button id="chatSidebarToggle" class="icon-btn" aria-label="Mostrar sesiones"
+            title="Sesiones" aria-expanded="false">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="4" y1="7" x2="20" y2="7"/>
@@ -648,19 +648,19 @@
         <line x1="4" y1="17" x2="20" y2="17"/>
       </svg>
     </button>
-    <aside id="chatSidebar" aria-label="Chat sessions">
-      <button type="button" id="chatNewBtn" class="chat-new-btn" title="New chat">
+    <aside id="chatSidebar" aria-label="Sesiones de chat">
+      <button type="button" id="chatNewBtn" class="chat-new-btn" title="Nueva conversación">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="12" y1="5" x2="12" y2="19"/>
           <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
-        New chat
+        Nueva conversación
       </button>
-      <div id="chatSidebarHeader" class="chat-sidebar-header">Sessions</div>
+      <div id="chatSidebarHeader" class="chat-sidebar-header">Sesiones</div>
       <div id="chatSessionList" role="list" class="chat-session-list"></div>
     </aside>
-    <div id="chatMessages" role="log" aria-live="polite" aria-label="Conversation"></div>
+    <div id="chatMessages" role="log" aria-live="polite" aria-label="Conversación"></div>
   </div>
 <template id="chatEmptyArt">
 <svg class="chat-ascii" viewBox="0 0 435 27.0" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Think before you ask.">
@@ -681,6 +681,7 @@
     <g id="s-g-s"><rect x="0" y="24" width="12" height="12"/><rect x="12" y="24" width="12" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="12" y="48" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/></g>
     <g id="s-g-u"><rect x="0" y="24" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="36" y="60" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/></g>
     <g id="s-g-y"><rect x="0" y="24" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="12" y="48" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="36" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/></g>
+    <g id="s-g-space"></g>
   </defs>
   <g transform="scale(0.25)">
     <g fill="url(#s-shadow)" transform="translate(10, 10)">
@@ -744,7 +745,7 @@
         <line x1="4" y1="17" x2="20" y2="17"/>
       </svg>
     </span>
-    <button type="button" id="chatSendBtn" class="chat-send" aria-label="Send" title="Send" hidden>
+    <button type="button" id="chatSendBtn" class="chat-send" aria-label="Enviar" title="Enviar" hidden>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="12" y1="19" x2="12" y2="5"/>
@@ -933,7 +934,7 @@
     if (next === 'links') return 'Favoritos…';
     if (next === 'timers') return 'Temporizadores…';
     if (next === 'timer') return 'Temporizador';
-    if (next === 'chat') return 'Ask something...';
+    if (next === 'chat') return 'Pregunta algo...';
     return 'Abrir URL…';
   }
   function setMode(next) {
@@ -2487,7 +2488,7 @@
   function enterChatExit() {
     chatExitArmed = true;
     input.value = '';
-    input.placeholder = 'Exit chat… (x)';
+    input.placeholder = 'Salir del chat… (x)';
     chatIndicator.hidden = true;
     cmdIndicator.hidden = false;
   }
@@ -2495,7 +2496,7 @@
     chatExitArmed = false;
     chatIndicator.hidden = false;
     cmdIndicator.hidden = true;
-    input.placeholder = 'Ask something...';
+    input.placeholder = 'Pregunta algo...';
   }
   function updateChatSendState() {
     if (!chatSendBtn) return;
@@ -2520,15 +2521,17 @@
   }
   function toggleChatSidebar() { setChatSidebar(!chatSidebarOpen); }
   /* Start a fresh thread: clear the current session selection, fold the
-     sidebar, and show the 'Think before you ask.' welcome. Guarded so a
-     message that is still streaming can't be reset out from under the UI. */
+     sidebar, and show the 'Think before you ask.' welcome. Any still-streaming
+     send/regenerate is aborted so it can't write into the cleared thread. */
   function startNewChat() {
-    if (chatBusy) return;
+    /* New chat always opens a blank thread: abort any still-streaming send or
+       regenerate so it can't keep writing into the thread we're about to clear. */
+    if (chatAbort) { chatAbort.abort(); chatAbort = null; }
+    chatBusy = false;
     chatSessionId = null;
     chatMessagesList = [];
     chatExitArmed = false;
     chatLoadGen++;
-    if (chatAbort) { chatAbort.abort(); chatAbort = null; }
     setChatSidebar(false);
     renderChatMessages();
     renderChatSessionList();
@@ -2555,7 +2558,7 @@
     if (!chatSessions.length) {
       var empty = document.createElement('div');
       empty.className = 'chat-session-empty';
-      empty.textContent = 'No sessions yet.';
+      empty.textContent = 'Aún no hay sesiones.';
       chatSessionList.appendChild(empty);
       return;
     }
@@ -2564,10 +2567,10 @@
     var yesterday = startOfDay(now - 86400000);
     var week = startOfDay(now - 6 * 86400000);
     var groups = [
-      { label: 'Today', items: [] },
-      { label: 'Yesterday', items: [] },
-      { label: 'This Week', items: [] },
-      { label: 'Earlier', items: [] }
+      { label: 'Hoy', items: [] },
+      { label: 'Ayer', items: [] },
+      { label: 'Esta semana', items: [] },
+      { label: 'Anteriores', items: [] }
     ];
     chatSessions.forEach(function (s) {
       var t = Number(s.updated_at) || 0;
@@ -2587,7 +2590,7 @@
         item.className = 'chat-session-item' + (s.id === chatSessionId ? ' active' : '');
         item.setAttribute('role', 'listitem');
         item.setAttribute('tabindex', '0');
-        item.textContent = s.title || s.last_message || 'Session';
+        item.textContent = s.title || s.last_message || 'Sesión';
         item.title = s.title || '';
         item.addEventListener('mousedown', function (ev) { ev.preventDefault(); openChatSession(s.id); });
         /* keyboard access: Enter / Space opens the session */
@@ -2601,7 +2604,7 @@
   function openChatSession(id) {
     if (!id) return;
     var access = window.__startChatAccess;
-    if (!access || !access.token()) { appendChatNotice('No API connection.'); return; }
+    if (!access || !access.token()) { appendChatNotice('Sin conexión con la API.'); return; }
     var gen = ++chatLoadGen;   /* stale responses from an older selection are ignored */
     chatSessionId = id;
     chatMessagesList = [];
@@ -2621,7 +2624,7 @@
       renderChatMessages();
       renderChatSessionList();
       scrollChatBottom();
-    }).catch(function () { if (gen === chatLoadGen) { appendChatNotice('Could not load the session.'); } });
+    }).catch(function () { if (gen === chatLoadGen) { appendChatNotice('No se pudo cargar la sesión.'); } });
   }
 
   /* --- message rendering + actions --- */
@@ -2635,7 +2638,7 @@
       if (tpl && tpl.content && tpl.content.cloneNode) {
         empty.appendChild(tpl.content.cloneNode(true));
       } else {
-        empty.textContent = 'Ask something...';
+        empty.textContent = 'Pregunta algo...';
       }
       chatMessages.appendChild(empty);
       return;
@@ -2652,10 +2655,10 @@
     wrap.appendChild(bubble);
     var actions = document.createElement('div');
     actions.className = 'msg-actions';
-    actions.appendChild(actionBtn(SVG_COPY, 'Copy', function () { copyMessage(m.content); }));
-    actions.appendChild(actionBtn(SVG_TRASH, 'Delete', function () { deleteMessage(m); }));
+    actions.appendChild(actionBtn(SVG_COPY, 'Copiar', function () { copyMessage(m.content); }));
+    actions.appendChild(actionBtn(SVG_TRASH, 'Eliminar', function () { deleteMessage(m); }));
     if (m.role === 'assistant' && !m.streaming) {
-      actions.appendChild(actionBtn(SVG_REGEN, 'Regenerate', function () { regenerateMessage(m); }));
+      actions.appendChild(actionBtn(SVG_REGEN, 'Regenerar', function () { regenerateMessage(m); }));
     }
     wrap.appendChild(actions);
     return wrap;
@@ -2692,12 +2695,12 @@
       headers: { 'Authorization': 'Bearer ' + access.token() }
     }).then(function (r) {
       /* only drop the bubble once the server confirms the delete */
-      if (!r.ok) { appendChatNotice('Could not delete the message.'); return; }
+      if (!r.ok) { appendChatNotice('No se pudo eliminar el mensaje.'); return; }
       var idx = chatMessagesList.indexOf(m);
       if (idx !== -1) { chatMessagesList.splice(idx, 1); }
       renderChatMessages();
       loadChatSessions();
-    }).catch(function () { appendChatNotice('Could not delete the message.'); });
+    }).catch(function () { appendChatNotice('No se pudo eliminar el mensaje.'); });
   }
 
   /* --- streaming a conversation turn (send + regenerate) --- */
@@ -2732,7 +2735,7 @@
     if (!text) return;
     var access = window.__startChatAccess;
     if (!access || !access.token()) {
-      appendChatNotice('Chat needs the sync login: sign in with your password.');
+      appendChatNotice('El chat necesita el inicio de sesión: introduce tu contraseña.');
       return;
     }
     chatBusy = true;
@@ -2774,7 +2777,7 @@
         } else if (obj.type === 'error') {
           var l2 = chatMessagesList[chatMessagesList.length - 1];
           if (l2 && l2.streaming) { chatMessagesList.pop(); }
-          appendChatNotice('The AI could not reply. Check AI_MODEL and AI_API_KEY.');
+          appendChatNotice('La IA no pudo responder. Comprueba AI_MODEL y AI_API_KEY.');
           chatBusy = false;
           updateChatSendState();
           renderChatMessages();
@@ -2789,7 +2792,7 @@
         renderChatMessages();
         return;
       }
-      appendChatNotice('Could not send. Check your connection.');
+      appendChatNotice('No se pudo enviar. Comprueba tu conexión.');
       chatBusy = false;
       updateChatSendState();
       renderChatMessages();
@@ -2823,7 +2826,7 @@
           m.streaming = false; chatBusy = false; updateChatSendState(); renderChatMessages(); loadChatSessions();
         } else if (obj.type === 'error') {
           m.content = original; m.streaming = false; chatBusy = false;
-          updateChatSendState(); renderChatMessages(); appendChatNotice('Could not regenerate.'); loadChatSessions();
+          updateChatSendState(); renderChatMessages(); appendChatNotice('No se pudo regenerar.'); loadChatSessions();
         }
       });
     }).catch(function (err) {
@@ -2834,7 +2837,7 @@
       }
       m.content = original; m.streaming = false; chatBusy = false;
       updateChatSendState(); renderChatMessages();
-      appendChatNotice('Could not regenerate.');
+      appendChatNotice('No se pudo regenerar.');
     });
   }
 
