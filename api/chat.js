@@ -42,7 +42,16 @@ module.exports = async function handler(req, res) {
   var session = null;
   var isNew = false;
   if (chat.validId(sessionId)) {
-    try { session = await lib.getChatSession(sessionId); } catch (e) {}
+    try {
+      session = await lib.getChatSession(sessionId);
+    } catch (e) {
+      /* a transient DB read failure must NOT split an existing thread by
+         pretending the session is gone and creating a new one */
+      console.error('chat session lookup failed:', e);
+      res.write(chat.jsonLine({ type: 'error', error: 'db_error' }));
+      res.end();
+      return;
+    }
   }
   if (!session) {
     /* no valid/known session -> start a new thread (a stale reference to a
@@ -125,6 +134,15 @@ module.exports = async function handler(req, res) {
           if (!p) continue;
           if (p.type === 'delta') { full += p.text; res.write(chat.jsonLine({ type: 'delta', text: p.text })); }
           else if (p.type === 'error') { failed = true; failMsg = 'ai_error'; break; }
+        }
+      }
+      /* a provider that closes right after the final line without a trailing
+         newline leaves it in `buf` — flush it so the last delta isn't lost */
+      if (!failed && buf.trim()) {
+        var tp = chat.parseProviderLine(buf);
+        if (tp) {
+          if (tp.type === 'delta') { full += tp.text; res.write(chat.jsonLine({ type: 'delta', text: tp.text })); }
+          else if (tp.type === 'error') { failed = true; failMsg = 'ai_error'; }
         }
       }
     }

@@ -350,16 +350,32 @@
     pointer-events: none;
   }
   body.chat-open .links { display: none; }
-  /* the bar redocks to the bottom, full width, with a top hairline */
+  /* The chat bar becomes a floating rounded pill, centered — NOT full width.
+     `align-self:center` keeps it centered; when the sidebar is open the pill
+     shrinks (narrower max-width) and shifts right so it stays centered in the
+     area beside the sidebar. `body.chat-sidebar-open` is toggled in JS. */
   body.chat-open .search {
-    max-width: none;
+    align-self: center;
     width: 100%;
-    margin: 0;
-    padding: 12px 16px;
-    border-top: 1px solid var(--line);
+    max-width: min(640px, calc(100% - 48px));
+    margin: 8px 0 14px;
+    padding: 6px 12px 6px 8px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--line);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, .06);
     flex: none;
+    transition: max-width .25s ease, transform .25s ease;
   }
-  body.chat-open .search input { padding-right: 44px; }
+  body.chat-open.chat-sidebar-open .search {
+    max-width: min(calc(640px - var(--chat-sidebar-w)), calc(100% - 48px));
+    transform: translateX(calc(var(--chat-sidebar-w) / 2));
+  }
+  body.chat-open .search input {
+    border-bottom: 0;
+    padding-right: 44px;
+    background: transparent;
+  }
   body.chat-open .chat-indicator { display: flex; }
   #chatView[hidden] { display: none; }
 
@@ -372,26 +388,28 @@
     min-height: 0;
     flex: 1;
   }
-  /* sidebar toggle — a small hamburger pinned at the top-left, above the
-     sidebar, with a hover backdrop. Stays put while the sidebar slides. */
+  /* sidebar toggle — an INVISIBLE 60x60 hit square (4x the 15px hamburger
+     icon) pinned at the top-left. Clicking anywhere in it opens the sidebar,
+     but the square itself never shows a backdrop (no hover/click visual). */
   .icon-btn {
     position: absolute;
-    top: 12px;
-    left: 12px;
+    top: 8px;
+    left: 8px;
     z-index: 3;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
+    align-items: flex-start;
+    justify-content: flex-start;
+    width: 60px;
+    height: 60px;
+    padding: 8px;
     border: 0;
     background: transparent;
     color: var(--muted);
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    transition: background-color .15s ease, color .15s ease;
   }
-  .icon-btn:hover { background: var(--line); color: var(--ink); }
+  .icon-btn:hover { background: transparent; }
+  .icon-btn:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
   .icon-btn svg { pointer-events: none; }
 
   /* The sliding session panel. Off-screen by default (translateX(-100%)),
@@ -621,8 +639,8 @@
   </g>
 </svg>
   <div id="chatView" hidden>
-    <button id="chatSidebarToggle" class="icon-btn" aria-label="Mostrar sesiones"
-            title="Sesiones" aria-expanded="false">
+    <button id="chatSidebarToggle" class="icon-btn" aria-label="Show sessions"
+            title="Sessions" aria-expanded="false">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="4" y1="7" x2="20" y2="7"/>
@@ -630,8 +648,8 @@
         <line x1="4" y1="17" x2="20" y2="17"/>
       </svg>
     </button>
-    <aside id="chatSidebar" aria-label="Sesiones de chat">
-      <button type="button" id="chatNewBtn" class="chat-new-btn" title="Nueva conversación">
+    <aside id="chatSidebar" aria-label="Chat sessions">
+      <button type="button" id="chatNewBtn" class="chat-new-btn" title="New chat">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="12" y1="5" x2="12" y2="19"/>
@@ -639,10 +657,10 @@
         </svg>
         New chat
       </button>
-      <div id="chatSidebarHeader" class="chat-sidebar-header">Sesiones</div>
+      <div id="chatSidebarHeader" class="chat-sidebar-header">Sessions</div>
       <div id="chatSessionList" role="list" class="chat-session-list"></div>
     </aside>
-    <div id="chatMessages" role="log" aria-live="polite" aria-label="Conversación"></div>
+    <div id="chatMessages" role="log" aria-live="polite" aria-label="Conversation"></div>
   </div>
 <template id="chatEmptyArt">
 <svg class="chat-ascii" viewBox="0 0 435 27.0" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Think before you ask.">
@@ -726,7 +744,7 @@
         <line x1="4" y1="17" x2="20" y2="17"/>
       </svg>
     </span>
-    <button type="button" id="chatSendBtn" class="chat-send" aria-label="Enviar" title="Enviar" hidden>
+    <button type="button" id="chatSendBtn" class="chat-send" aria-label="Send" title="Send" hidden>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="12" y1="19" x2="12" y2="5"/>
@@ -810,6 +828,8 @@
   var chatSidebarOpen = false;
   var chatExitArmed = false;
   var chatBusy = false;       /* a send/regenerate is in flight */
+  var chatLoadGen = 0;        /* bump on every session change; guards stale loads */
+  var chatAbort = null;       /* AbortController for the in-flight send/regenerate */
 
   /* ---------- persistence ---------- */
   function save(key, val) {
@@ -2328,10 +2348,12 @@
     try { u = new URL(url); } catch (e) { return false; }
     return u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:';
   }
-  /* Inline markdown on already-HTML-escaped text: code spans are pulled out
-     first (so emphasis never runs inside code), then links/emphasis, then
-     code is re-inserted. */
+  /* Inline markdown on RAW text: escape HTML first (so the AI's output can
+     never inject markup), then apply code spans/links/emphasis on the escaped
+     string. Code spans are pulled out first so emphasis never runs inside
+     code; links keep their already-escaped URL (no double-escape). */
   function inlineMd(s) {
+    s = escapeHtml(s);
     var codes = [];
     s = s.replace(/`([^`]+)`/g, function (m, c) {
       codes.push(c);
@@ -2339,8 +2361,8 @@
     });
     s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (whole, text, url) {
       if (!isSafeLink(url)) return whole;
-      return '<a href="' + url.replace(/&/g, '&amp;').replace(/"/g, '&quot;') +
-             '" rel="noopener noreferrer">' + text + '</a>';
+      /* `url` is already HTML-escaped by the escapeHtml above — do not re-escape */
+      return '<a href="' + url + '" rel="noopener noreferrer">' + text + '</a>';
     });
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
@@ -2352,10 +2374,10 @@
     return s;
   }
   /* Safe block markdown: headings, paragraphs, lists, blockquotes, fenced
-     code. Input is fully HTML-escaped first, so the AI's output can never
-     inject markup. */
+     code. Structure is detected on the RAW text; each inline segment is
+     escaped by inlineMd() so the AI's output can never inject markup. */
   function blockMd(text) {
-    var lines = escapeHtml(text).split('\n');
+    var lines = String(text).split('\n');
     var html = '';
     var para = [];
     var i = 0;
@@ -2380,7 +2402,7 @@
           code.push(lines[i]);
           i++;
         }
-        html += '<pre><code>' + code.join('\n') + '</code></pre>';
+        html += '<pre><code>' + escapeHtml(code.join('\n')) + '</code></pre>';
         continue;
       }
       var h = t.match(/^(#{1,4})\s+(.*)$/);
@@ -2391,7 +2413,7 @@
         while (i < lines.length && lines[i].trim().indexOf('>') === 0) {
           q.push(lines[i].trim().replace(/^>\s?/, '')); i++;
         }
-        html += '<blockquote><p>' + inlineMd(q.join('<br>')) + '</p></blockquote>';
+        html += '<blockquote><p>' + q.map(function (l) { return inlineMd(l); }).join('<br>') + '</p></blockquote>';
         continue;
       }
       if (/^[-*+]\s+/.test(t)) {
@@ -2429,6 +2451,8 @@
     input.value = '';
     chatBusy = false;
     chatExitArmed = false;
+    chatLoadGen++;   /* ignore any in-flight session load from a previous view */
+    if (chatAbort) { chatAbort.abort(); chatAbort = null; }
     document.body.classList.add('chat-open');
     chatView.hidden = false;
     /* replace the right sync indicator with the send arrow */
@@ -2446,8 +2470,11 @@
   function exitChat() {
     chatExitArmed = false;
     chatBusy = false;
+    chatLoadGen++;
+    if (chatAbort) { chatAbort.abort(); chatAbort = null; }
     setMode('command');
     document.body.classList.remove('chat-open');
+    document.body.classList.remove('chat-sidebar-open');
     chatView.hidden = true;
     chatSidebar.classList.remove('open');
     chatSidebarOpen = false;
@@ -2460,7 +2487,7 @@
   function enterChatExit() {
     chatExitArmed = true;
     input.value = '';
-    input.placeholder = 'Salir del chat… (x)';
+    input.placeholder = 'Exit chat… (x)';
     chatIndicator.hidden = true;
     cmdIndicator.hidden = false;
   }
@@ -2488,6 +2515,8 @@
     chatSidebarOpen = !!open;
     chatSidebar.classList.toggle('open', chatSidebarOpen);
     chatSidebarToggle.setAttribute('aria-expanded', chatSidebarOpen ? 'true' : 'false');
+    /* reflect the open state on <body> so the chat input pill can shrink */
+    document.body.classList.toggle('chat-sidebar-open', chatSidebarOpen);
   }
   function toggleChatSidebar() { setChatSidebar(!chatSidebarOpen); }
   /* Start a fresh thread: clear the current session selection, fold the
@@ -2498,6 +2527,8 @@
     chatSessionId = null;
     chatMessagesList = [];
     chatExitArmed = false;
+    chatLoadGen++;
+    if (chatAbort) { chatAbort.abort(); chatAbort = null; }
     setChatSidebar(false);
     renderChatMessages();
     renderChatSessionList();
@@ -2524,7 +2555,7 @@
     if (!chatSessions.length) {
       var empty = document.createElement('div');
       empty.className = 'chat-session-empty';
-      empty.textContent = 'Aún no hay sesiones.';
+      empty.textContent = 'No sessions yet.';
       chatSessionList.appendChild(empty);
       return;
     }
@@ -2555,9 +2586,14 @@
         var item = document.createElement('div');
         item.className = 'chat-session-item' + (s.id === chatSessionId ? ' active' : '');
         item.setAttribute('role', 'listitem');
-        item.textContent = s.title || s.last_message || 'Sesión';
+        item.setAttribute('tabindex', '0');
+        item.textContent = s.title || s.last_message || 'Session';
         item.title = s.title || '';
         item.addEventListener('mousedown', function (ev) { ev.preventDefault(); openChatSession(s.id); });
+        /* keyboard access: Enter / Space opens the session */
+        item.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openChatSession(s.id); }
+        });
         chatSessionList.appendChild(item);
       });
     });
@@ -2565,7 +2601,8 @@
   function openChatSession(id) {
     if (!id) return;
     var access = window.__startChatAccess;
-    if (!access || !access.token()) { appendChatNotice('No hay conexión con la API.'); return; }
+    if (!access || !access.token()) { appendChatNotice('No API connection.'); return; }
+    var gen = ++chatLoadGen;   /* stale responses from an older selection are ignored */
     chatSessionId = id;
     chatMessagesList = [];
     chatExitArmed = false;
@@ -2577,13 +2614,14 @@
       if (!r.ok) throw new Error('http_' + r.status);
       return r.json();
     }).then(function (data) {
+      if (gen !== chatLoadGen) return;   /* a newer selection superceded this one */
       chatMessagesList = (data.messages || []).map(function (m) {
         return { id: m.id, role: m.role, content: m.content, created_at: Number(m.created_at), streaming: false };
       });
       renderChatMessages();
       renderChatSessionList();
       scrollChatBottom();
-    }).catch(function () { appendChatNotice('No se pudo cargar la sesión.'); });
+    }).catch(function () { if (gen === chatLoadGen) { appendChatNotice('Could not load the session.'); } });
   }
 
   /* --- message rendering + actions --- */
@@ -2614,10 +2652,10 @@
     wrap.appendChild(bubble);
     var actions = document.createElement('div');
     actions.className = 'msg-actions';
-    actions.appendChild(actionBtn(SVG_COPY, 'Copiar', function () { copyMessage(m.content); }));
-    actions.appendChild(actionBtn(SVG_TRASH, 'Borrar', function () { deleteMessage(m); }));
+    actions.appendChild(actionBtn(SVG_COPY, 'Copy', function () { copyMessage(m.content); }));
+    actions.appendChild(actionBtn(SVG_TRASH, 'Delete', function () { deleteMessage(m); }));
     if (m.role === 'assistant' && !m.streaming) {
-      actions.appendChild(actionBtn(SVG_REGEN, 'Regenerar', function () { regenerateMessage(m); }));
+      actions.appendChild(actionBtn(SVG_REGEN, 'Regenerate', function () { regenerateMessage(m); }));
     }
     wrap.appendChild(actions);
     return wrap;
@@ -2649,16 +2687,17 @@
   function deleteMessage(m) {
     var access = window.__startChatAccess;
     if (!access || !access.token()) return;
-    var removed = false;
     fetch(access.base + '/api/chat-messages?id=' + encodeURIComponent(m.id), {
       method: 'DELETE',
       headers: { 'Authorization': 'Bearer ' + access.token() }
-    }).then(function () {
+    }).then(function (r) {
+      /* only drop the bubble once the server confirms the delete */
+      if (!r.ok) { appendChatNotice('Could not delete the message.'); return; }
       var idx = chatMessagesList.indexOf(m);
-      if (idx !== -1) { chatMessagesList.splice(idx, 1); removed = true; }
+      if (idx !== -1) { chatMessagesList.splice(idx, 1); }
       renderChatMessages();
-      if (removed) loadChatSessions();
-    }).catch(function () {});
+      loadChatSessions();
+    }).catch(function () { appendChatNotice('Could not delete the message.'); });
   }
 
   /* --- streaming a conversation turn (send + regenerate) --- */
@@ -2693,7 +2732,7 @@
     if (!text) return;
     var access = window.__startChatAccess;
     if (!access || !access.token()) {
-      appendChatNotice('El chat necesita la sincronización: entra con tu contraseña.');
+      appendChatNotice('Chat needs the sync login: sign in with your password.');
       return;
     }
     chatBusy = true;
@@ -2704,11 +2743,12 @@
     scrollChatBottom();
     input.value = '';
     updateChatSendState();
-    var reqSessionId = chatSessionId;
+    chatAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     fetch(access.base + '/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + access.token() },
-      body: JSON.stringify({ sessionId: chatSessionId, message: text })
+      body: JSON.stringify({ sessionId: chatSessionId, message: text }),
+      signal: chatAbort ? chatAbort.signal : undefined
     }).then(function (r) {
       if (!r.ok) throw new Error('http_' + r.status);
       return r.body.getReader();
@@ -2734,15 +2774,22 @@
         } else if (obj.type === 'error') {
           var l2 = chatMessagesList[chatMessagesList.length - 1];
           if (l2 && l2.streaming) { chatMessagesList.pop(); }
-          appendChatNotice('La IA no pudo responder. Revisa AI_MODEL y AI_API_KEY.');
+          appendChatNotice('The AI could not reply. Check AI_MODEL and AI_API_KEY.');
           chatBusy = false;
           updateChatSendState();
           renderChatMessages();
           loadChatSessions();
         }
       });
-    }).catch(function () {
-      appendChatNotice('No se pudo enviar. Revisa tu conexión.');
+    }).catch(function (err) {
+      /* a deliberate abort (user exited chat / started a new one) is silent */
+      if (err && err.name === 'AbortError') {
+        chatBusy = false;
+        updateChatSendState();
+        renderChatMessages();
+        return;
+      }
+      appendChatNotice('Could not send. Check your connection.');
       chatBusy = false;
       updateChatSendState();
       renderChatMessages();
@@ -2753,31 +2800,41 @@
     if (chatBusy || !chatSessionId || !m.id) return;
     var access = window.__startChatAccess;
     if (!access || !access.token()) return;
+    var original = m.content;   /* keep the stored reply; restore it on failure */
     chatBusy = true;
     updateChatSendState();
     m.content = '';
     m.streaming = true;
     renderChatMessages();
     scrollChatBottom();
+    chatAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     fetch(access.base + '/api/chat-messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + access.token() },
-      body: JSON.stringify({ sessionId: chatSessionId, assistantMessageId: m.id })
+      body: JSON.stringify({ sessionId: chatSessionId, assistantMessageId: m.id }),
+      signal: chatAbort ? chatAbort.signal : undefined
     }).then(function (r) {
       if (!r.ok) throw new Error('http_' + r.status);
       return r.body.getReader();
     }).then(function (reader) {
       return consumeChatStream(reader, function (obj) {
         if (obj.type === 'delta') { m.content += obj.text; renderChatMessages(); scrollChatBottom(); }
-        else if (obj.type === 'done') { m.streaming = false; chatBusy = false; updateChatSendState(); renderChatMessages(); loadChatSessions(); }
-        else if (obj.type === 'error') { m.streaming = false; chatBusy = false; updateChatSendState(); renderChatMessages(); appendChatNotice('No se pudo regenerar.'); loadChatSessions(); }
+        else if (obj.type === 'done') {
+          m.streaming = false; chatBusy = false; updateChatSendState(); renderChatMessages(); loadChatSessions();
+        } else if (obj.type === 'error') {
+          m.content = original; m.streaming = false; chatBusy = false;
+          updateChatSendState(); renderChatMessages(); appendChatNotice('Could not regenerate.'); loadChatSessions();
+        }
       });
-    }).catch(function () {
-      m.streaming = false;
-      chatBusy = false;
-      updateChatSendState();
-      renderChatMessages();
-      appendChatNotice('No se pudo regenerar.');
+    }).catch(function (err) {
+      if (err && err.name === 'AbortError') {
+        m.content = original; m.streaming = false; chatBusy = false;
+        updateChatSendState(); renderChatMessages();
+        return;
+      }
+      m.content = original; m.streaming = false; chatBusy = false;
+      updateChatSendState(); renderChatMessages();
+      appendChatNotice('Could not regenerate.');
     });
   }
 

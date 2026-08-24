@@ -107,7 +107,7 @@ test('exiting chat via / then x returns to command mode and restores the layout'
   await enterChat(page);
 
   await typeInBar(page, '/');
-  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Salir del chat… (x)');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Exit chat… (x)');
 
   await typeInBar(page, 'x');
   await expect(page.locator('#q')).toHaveAttribute('placeholder', 'Comando…');
@@ -153,7 +153,9 @@ test('clicking a session loads and renders its messages', async ({ page }) => {
   const messages = {
     's-today': [
       { id: 'm1', role: 'user', content: 'Hi there', created_at: Date.now() },
-      { id: 'm2', role: 'assistant', content: '**Hello** from the bot', created_at: Date.now() + 1 }
+      { id: 'm2', role: 'assistant',
+        content: '> a **quote**\n\nSee [MDN](https://developer.mozilla.org?a=1&b=2) for more.',
+        created_at: Date.now() + 1 }
     ]
   };
   await mockChat(page, {
@@ -168,7 +170,14 @@ test('clicking a session loads and renders its messages', async ({ page }) => {
 
   await expect(page.locator('#chatMessages .chat-msg.user')).toHaveCount(1);
   await expect(page.locator('#chatMessages .chat-msg.assistant')).toHaveCount(1);
-  await expect(page.locator('#chatMessages .chat-msg.assistant .msg-bubble strong')).toHaveText('Hello');
+  /* markdown: bold + blockquote render (blockquotes previously never matched
+     because the whole text was escaped before the '>' check) */
+  await expect(page.locator('#chatMessages .chat-msg.assistant .msg-bubble strong')).toHaveText('quote');
+  await expect(page.locator('#chatMessages .chat-msg.assistant .msg-bubble blockquote')).toHaveCount(1);
+  /* links are NOT double-encoded: the & stays a single literal (the browser
+     decodes the one &amp; entity on parse; double-encoding would leave &amp;) */
+  const href = await page.locator('#chatMessages .chat-msg.assistant .msg-bubble a').getAttribute('href');
+  expect(href).toBe('https://developer.mozilla.org?a=1&b=2');
 });
 
 /* ---------- sending a message ---------- */
@@ -235,6 +244,8 @@ test('deleting a message removes it from the thread (mocked DELETE)', async ({ p
   await typeInBar(page, 'delete me');
   await page.locator('#q').press('Enter');
   await expect(page.locator('#chatMessages .chat-msg.user')).toHaveCount(1);
+  /* wait for the streamed reply to finish so it can't race the delete */
+  await expect(page.locator('#chatMessages .chat-msg.assistant .msg-bubble')).toHaveText('Hello!');
 
   /* delete the user message (trash action) */
   await page.locator('#chatMessages .chat-msg.user .msg-action').nth(1).click();

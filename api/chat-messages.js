@@ -34,6 +34,12 @@ async function streamRegenerate(req, res, lib, chat, sessionId, targetId) {
   var targetIdx = -1;
   for (var i = 0; i < messages.length; i++) { if (messages[i].id === targetId) { targetIdx = i; break; } }
   if (targetIdx === -1) { lib.send(res, 404, { error: 'message_not_found' }, req); return; }
+  /* regeneration replaces an ASSISTANT reply in place — never overwrite a user
+     message (the provider would write text over it while its role stays user) */
+  if (messages[targetIdx].role !== 'assistant') {
+    lib.send(res, 400, { error: 'not_assistant_message' }, req);
+    return;
+  }
 
   /* find the nearest preceding user message; regenerate needs its context */
   var userIdx = -1;
@@ -82,6 +88,14 @@ async function streamRegenerate(req, res, lib, chat, sessionId, targetId) {
           if (!p) continue;
           if (p.type === 'delta') { full += p.text; res.write(chat.jsonLine({ type: 'delta', text: p.text })); }
           else if (p.type === 'error') { failed = true; failMsg = 'ai_error'; break; }
+        }
+      }
+      /* flush a trailing SSE line that ended without a newline */
+      if (!failed && buf.trim()) {
+        var tp = chat.parseProviderLine(buf);
+        if (tp) {
+          if (tp.type === 'delta') { full += tp.text; res.write(chat.jsonLine({ type: 'delta', text: tp.text })); }
+          else if (tp.type === 'error') { failed = true; failMsg = 'ai_error'; }
         }
       }
     }

@@ -52,7 +52,8 @@ function validId(id) {
 /* Parse one line of an OpenAI-compatible SSE stream. Returns:
    { type: 'delta', text: '...' } for a content chunk,
    { type: 'error', status } when the chunk carries an error,
-   null for anything else (including the [DONE] sentinel). Pure + testable. */
+   { type: 'done' } for the [DONE] sentinel,
+   null for anything else. Pure + testable. */
 function parseProviderLine(line) {
   var trimmed = line.trim();
   if (!trimmed || trimmed.indexOf('data:') !== 0) return null;
