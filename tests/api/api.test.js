@@ -108,7 +108,7 @@ test('CORS: allowed origin echoed, disallowed/absent origin gets no ACAO', () =>
   const res = makeRes();
   lib.send(res, 200, { ok: true }, makeReq({ headers: { origin: ORIGIN } }));
   assert.equal(res.headers['Access-Control-Allow-Origin'], ORIGIN);
-  assert.equal(res.headers['Access-Control-Allow-Methods'], 'GET, POST, OPTIONS');
+  assert.equal(res.headers['Access-Control-Allow-Methods'], 'GET, POST, DELETE, OPTIONS');
   assert.equal(res.headers['Vary'], 'Origin');
   assert.equal(res.body.ok, true);
 

@@ -67,6 +67,7 @@
     width: 100%;
     max-width: 560px;
     height: auto;
+    transition: opacity .3s ease, transform .3s ease, max-height .3s ease, margin .3s ease;
   }
   /* Finished-countdown flash: the block-art timer blinks for a few seconds
      when it elapses, then settles into the count-up display. */
@@ -80,6 +81,7 @@
     width: 100%;
     max-width: 440px;
     margin: 44px 0 36px;
+    transition: max-width .3s ease, margin .3s ease, padding .3s ease;
   }
   .search-icon,
   .cmd-indicator,
@@ -283,6 +285,293 @@
     pointer-events: none;
   }
   .local-banner[hidden] { display: none; }
+  /* ---------- AI chat mode ---------- */
+  /* The sliding sidebar width — used by both the panel and the message-area
+     offset, so an open sidebar never hides the conversation behind it. */
+  :root { --chat-sidebar-w: min(280px, 82vw); }
+  /* Body/`main` swap to a full-height column: logo collapses, the search bar
+     docks to the bottom, and the chat view (sidebar + messages) fills the
+     space above. Toggled by adding `bg-chat` to <body>. */
+  .chat-indicator {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+    display: flex;
+  }
+  .chat-indicator[hidden] { display: none; }
+  .chat-send {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .chat-send:hover { background: var(--line); color: var(--ink); }
+  .chat-send[hidden] { display: none; }
+  .chat-send svg { pointer-events: none; }
+  .chat-send:disabled { color: var(--faint); cursor: default; }
+
+  body.chat-open {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0;
+    overflow: hidden;
+  }
+  body.chat-open main {
+    max-width: none;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  body.chat-open #logo {
+    opacity: 0;
+    max-height: 0;
+    margin: 0;
+    transform: translateY(-10px);
+    overflow: hidden;
+    pointer-events: none;
+  }
+  body.chat-open .links { display: none; }
+  /* the bar redocks to the bottom, full width, with a top hairline */
+  body.chat-open .search {
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 12px 16px;
+    border-top: 1px solid var(--line);
+    flex: none;
+  }
+  body.chat-open .search input { padding-right: 44px; }
+  body.chat-open .chat-indicator { display: flex; }
+  #chatView[hidden] { display: none; }
+
+  /* The chat view: a relative box that holds the messages area (filling it)
+     plus the sliding sidebar and its toggle, which stay layered above. */
+  #chatView {
+    display: flex;
+    position: relative;
+    width: 100%;
+    min-height: 0;
+    flex: 1;
+  }
+  /* sidebar toggle — a small hamburger pinned at the top-left, above the
+     sidebar, with a hover backdrop. Stays put while the sidebar slides. */
+  .icon-btn {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .icon-btn:hover { background: var(--line); color: var(--ink); }
+  .icon-btn svg { pointer-events: none; }
+
+  /* The sliding session panel. Off-screen by default (translateX(-100%)),
+     slides into view; a gray border line separates it from the page. */
+  #chatSidebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: var(--chat-sidebar-w);
+    background: var(--bg);
+    border-right: 1px solid var(--line);
+    z-index: 2;
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    overflow-y: auto;
+    padding-top: 56px;
+    padding-bottom: 8px;
+  }
+  #chatSidebar.open {
+    transform: translateX(0);
+    box-shadow: 0 0 14px rgba(0, 0, 0, .06);
+  }
+  /* when the sidebar is open, push the conversation right so it is never
+     hidden under the panel (the sidebar overlays on the same layer) */
+  #chatSidebar.open ~ #chatMessages {
+    margin-left: var(--chat-sidebar-w);
+  }
+  .chat-sidebar-header {
+    padding: 4px 16px 10px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--faint);
+  }
+  .chat-session-group {
+    padding: 2px 16px 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--faint);
+  }
+  .chat-session-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--ink);
+    transition: background-color .15s ease;
+  }
+  .chat-session-item:hover { background: var(--line); }
+  .chat-session-item.active { background: var(--line); }
+  .chat-session-empty {
+    padding: 8px 16px;
+    color: var(--faint);
+    font-size: 13px;
+  }
+  /* 'New chat' button at the top of the sidebar */
+  .chat-new-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 16px;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .chat-new-btn:hover { background: var(--line); color: var(--ink); }
+  .chat-new-btn svg { pointer-events: none; flex: none; }
+
+  /* Messages area: scrollable column of bubbles, bottom-docked. */
+  #chatMessages {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 20px 20px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    transition: margin-left .25s ease;
+  }
+  .chat-msg {
+    display: flex;
+    flex-direction: column;
+    max-width: 78%;
+  }
+  .chat-msg.user { align-self: flex-end; align-items: flex-end; }
+  .chat-msg.assistant { align-self: flex-start; align-items: flex-start; }
+  .msg-bubble {
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--line);
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .chat-msg.user .msg-bubble { background: var(--ink); color: var(--bg); }
+  .msg-bubble > :first-child { margin-top: 0; }
+  .msg-bubble > :last-child { margin-bottom: 0; }
+  .msg-bubble p { margin: 0 0 .5em; }
+  .msg-bubble pre {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    font-size: 13px;
+  }
+  .msg-bubble code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .9em;
+    background: var(--bg);
+    border-radius: 3px;
+    padding: 1px 4px;
+  }
+  .msg-bubble pre code { background: transparent; padding: 0; }
+  .msg-bubble a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+  .msg-bubble h1, .msg-bubble h2, .msg-bubble h3, .msg-bubble h4 {
+    font-size: 1.05em;
+    font-weight: 600;
+    margin: .6em 0 .4em;
+  }
+  .msg-bubble ul, .msg-bubble ol { margin: 0 0 .5em; padding-left: 1.3em; }
+  .msg-bubble blockquote {
+    margin: 0 0 .5em;
+    padding-left: 10px;
+    border-left: 3px solid var(--line);
+    color: var(--muted);
+  }
+  /* Per-message action row: copy/delete (both), regenerate (assistant). */
+  .msg-actions {
+    display: flex;
+    gap: 2px;
+    margin-top: 6px;
+    opacity: 0;
+    transition: opacity .15s ease;
+  }
+  .chat-msg:hover .msg-actions,
+  .chat-msg:focus-within .msg-actions { opacity: 1; }
+  .msg-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 5px;
+    cursor: pointer;
+    padding: 0;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .msg-action:hover { background: var(--line); color: var(--ink); }
+  .msg-action svg { pointer-events: none; }
+  .msg-error { color: var(--muted); font-size: 13px; }
+  .chat-empty {
+    margin: auto;
+    text-align: center;
+    color: var(--faint);
+    font-size: 14px;
+  }
+  /* 'Think before you ask.' block-art welcome on a blank chat — same 5x7
+     pixel-glyph style as the logo, at 1/4 scale, centered in the message area. */
+  .chat-ascii {
+    display: block;
+    width: 100%;
+    max-width: 400px;
+    height: auto;
+    margin: 0 auto;
+  }
 </style>
 </head>
 <body>
@@ -331,6 +620,61 @@
       <use href="#g-1" transform="translate(588, 10)"/>
   </g>
 </svg>
+  <div id="chatView" hidden>
+    <button id="chatSidebarToggle" class="icon-btn" aria-label="Mostrar sesiones"
+            title="Sesiones" aria-expanded="false">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4" y1="7" x2="20" y2="7"/>
+        <line x1="4" y1="12" x2="20" y2="12"/>
+        <line x1="4" y1="17" x2="20" y2="17"/>
+      </svg>
+    </button>
+    <aside id="chatSidebar" aria-label="Sesiones de chat">
+      <button type="button" id="chatNewBtn" class="chat-new-btn" title="Nueva conversación">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        New chat
+      </button>
+      <div id="chatSidebarHeader" class="chat-sidebar-header">Sesiones</div>
+      <div id="chatSessionList" role="list" class="chat-session-list"></div>
+    </aside>
+    <div id="chatMessages" role="log" aria-live="polite" aria-label="Conversación"></div>
+  </div>
+<template id="chatEmptyArt">
+<svg class="chat-ascii" viewBox="0 0 435 27.0" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Think before you ask.">
+  <defs>
+    <pattern id="s-shadow" width="12" height="12" patternUnits="userSpaceOnUse"><rect x="0" y="0" width="6" height="6" fill="var(--logo-shadow)"/><rect x="6" y="6" width="6" height="6" fill="var(--logo-shadow)"/></pattern>
+    <g id="s-g-dot"><rect x="24" y="60" width="12" height="12"/><rect x="36" y="60" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/><rect x="36" y="72" width="12" height="12"/></g>
+    <g id="s-g-t"><rect x="0" y="0" width="12" height="12"/><rect x="12" y="0" width="12" height="12"/><rect x="24" y="0" width="12" height="12"/><rect x="36" y="0" width="12" height="12"/><rect x="48" y="0" width="12" height="12"/><rect x="24" y="12" width="12" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="24" y="36" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="24" y="60" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/></g>
+    <g id="s-g-a"><rect x="12" y="24" width="12" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="12" y="48" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="36" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/><rect x="48" y="72" width="12" height="12"/></g>
+    <g id="s-g-b"><rect x="0" y="0" width="12" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="12" y="24" width="12" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/><rect x="36" y="72" width="12" height="12"/></g>
+    <g id="s-g-e"><rect x="0" y="24" width="12" height="12"/><rect x="12" y="24" width="12" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="12" y="48" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="36" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/><rect x="36" y="72" width="12" height="12"/></g>
+    <g id="s-g-f"><rect x="24" y="0" width="12" height="12"/><rect x="36" y="0" width="12" height="12"/><rect x="48" y="0" width="12" height="12"/><rect x="12" y="12" width="12" height="12"/><rect x="12" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="12" y="36" width="12" height="12"/><rect x="24" y="36" width="12" height="12"/><rect x="36" y="36" width="12" height="12"/><rect x="12" y="48" width="12" height="12"/><rect x="12" y="60" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/></g>
+    <g id="s-g-h"><rect x="0" y="0" width="12" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="12" y="24" width="12" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/><rect x="48" y="72" width="12" height="12"/></g>
+    <g id="s-g-i"><rect x="24" y="0" width="12" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="24" y="36" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="24" y="60" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/></g>
+    <g id="s-g-k"><rect x="0" y="0" width="12" height="12"/><rect x="0" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="24" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="12" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="24" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/><rect x="36" y="72" width="12" height="12"/></g>
+    <g id="s-g-n"><rect x="0" y="12" width="12" height="12"/><rect x="12" y="12" width="12" height="12"/><rect x="0" y="24" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/><rect x="48" y="72" width="12" height="12"/></g>
+    <g id="s-g-o"><rect x="12" y="24" width="12" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/><rect x="36" y="72" width="12" height="12"/></g>
+    <g id="s-g-r"><rect x="0" y="24" width="12" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="12" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/></g>
+    <g id="s-g-s"><rect x="0" y="24" width="12" height="12"/><rect x="12" y="24" width="12" height="12"/><rect x="24" y="24" width="12" height="12"/><rect x="36" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="12" y="48" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/></g>
+    <g id="s-g-u"><rect x="0" y="24" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="0" y="60" width="12" height="12"/><rect x="36" y="60" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/></g>
+    <g id="s-g-y"><rect x="0" y="24" width="12" height="12"/><rect x="48" y="24" width="12" height="12"/><rect x="0" y="36" width="12" height="12"/><rect x="48" y="36" width="12" height="12"/><rect x="0" y="48" width="12" height="12"/><rect x="12" y="48" width="12" height="12"/><rect x="24" y="48" width="12" height="12"/><rect x="36" y="48" width="12" height="12"/><rect x="48" y="48" width="12" height="12"/><rect x="48" y="60" width="12" height="12"/><rect x="0" y="72" width="12" height="12"/><rect x="12" y="72" width="12" height="12"/><rect x="24" y="72" width="12" height="12"/></g>
+  </defs>
+  <g transform="scale(0.25)">
+    <g fill="url(#s-shadow)" transform="translate(10, 10)">
+      <use href="#s-g-t" transform="translate(0, 10)"/><use href="#s-g-h" transform="translate(84, 10)"/><use href="#s-g-i" transform="translate(168, 10)"/><use href="#s-g-n" transform="translate(252, 10)"/><use href="#s-g-k" transform="translate(336, 10)"/><use href="#s-g-space" transform="translate(420, 10)"/><use href="#s-g-b" transform="translate(504, 10)"/><use href="#s-g-e" transform="translate(588, 10)"/><use href="#s-g-f" transform="translate(672, 10)"/><use href="#s-g-o" transform="translate(756, 10)"/><use href="#s-g-r" transform="translate(840, 10)"/><use href="#s-g-e" transform="translate(924, 10)"/><use href="#s-g-space" transform="translate(1008, 10)"/><use href="#s-g-y" transform="translate(1092, 10)"/><use href="#s-g-o" transform="translate(1176, 10)"/><use href="#s-g-u" transform="translate(1260, 10)"/><use href="#s-g-space" transform="translate(1344, 10)"/><use href="#s-g-a" transform="translate(1428, 10)"/><use href="#s-g-s" transform="translate(1512, 10)"/><use href="#s-g-k" transform="translate(1596, 10)"/><use href="#s-g-dot" transform="translate(1680, 10)"/>
+    </g>
+    <g fill="var(--logo)">
+      <use href="#s-g-t" transform="translate(0, 10)"/><use href="#s-g-h" transform="translate(84, 10)"/><use href="#s-g-i" transform="translate(168, 10)"/><use href="#s-g-n" transform="translate(252, 10)"/><use href="#s-g-k" transform="translate(336, 10)"/><use href="#s-g-space" transform="translate(420, 10)"/><use href="#s-g-b" transform="translate(504, 10)"/><use href="#s-g-e" transform="translate(588, 10)"/><use href="#s-g-f" transform="translate(672, 10)"/><use href="#s-g-o" transform="translate(756, 10)"/><use href="#s-g-r" transform="translate(840, 10)"/><use href="#s-g-e" transform="translate(924, 10)"/><use href="#s-g-space" transform="translate(1008, 10)"/><use href="#s-g-y" transform="translate(1092, 10)"/><use href="#s-g-o" transform="translate(1176, 10)"/><use href="#s-g-u" transform="translate(1260, 10)"/><use href="#s-g-space" transform="translate(1344, 10)"/><use href="#s-g-a" transform="translate(1428, 10)"/><use href="#s-g-s" transform="translate(1512, 10)"/><use href="#s-g-k" transform="translate(1596, 10)"/><use href="#s-g-dot" transform="translate(1680, 10)"/>
+    </g>
+  </g>
+</svg>
+</template>
+
   <form class="search" action="https://cn.bing.com/search" method="get" role="search"
         target="_blank" rel="noopener noreferrer">
     <span class="globe-icon" id="urlIcon" aria-hidden="true">://</span>
@@ -374,6 +718,21 @@
         <line x1="12" y1="17" x2="12.01" y2="17"/>
       </svg>
     </span>
+    <span class="chat-indicator" id="chatIndicator" aria-hidden="true" hidden>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4" y1="7" x2="20" y2="7"/>
+        <line x1="4" y1="12" x2="20" y2="12"/>
+        <line x1="4" y1="17" x2="20" y2="17"/>
+      </svg>
+    </span>
+    <button type="button" id="chatSendBtn" class="chat-send" aria-label="Enviar" title="Enviar" hidden>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="19" x2="12" y2="5"/>
+        <polyline points="5 12 12 5 19 12"/>
+      </svg>
+    </button>
     <label class="sr-only" for="q">Abrir URL o buscar</label>
     <input id="q" type="search" name="q" placeholder="Abrir URL…"
            autocomplete="off" autofocus spellcheck="false"
@@ -409,6 +768,16 @@
   var timerIcon = document.getElementById('timerIcon');
   var historyMenu = document.getElementById('urlHistory');
   var timerMenu = document.getElementById('timerList');
+  /* ---------- AI chat ---------- */
+  var chatView = document.getElementById('chatView');
+  var chatSidebarToggle = document.getElementById('chatSidebarToggle');
+  var chatSidebar = document.getElementById('chatSidebar');
+  var chatSessionList = document.getElementById('chatSessionList');
+  var chatMessages = document.getElementById('chatMessages');
+  var chatSendBtn = document.getElementById('chatSendBtn');
+  var chatIndicator = document.getElementById('chatIndicator');
+  var chatNewBtn = document.getElementById('chatNewBtn');
+  var syncIconEl = document.getElementById('syncIcon');
 
   var ENGINES = {
     bing:      { action: 'https://cn.bing.com/search',           q: 'q',      ph: 'Buscar en Bing…' },
@@ -433,6 +802,14 @@
      the top. */
   var mode = 'url';
   var topMode = 'url';
+
+  /* ---------- AI chat state ---------- */
+  var chatSessions = [];      /* [{ id, title, created_at, updated_at, last_message }] */
+  var chatSessionId = null;   /* current thread */
+  var chatMessagesList = [];  /* [{ id, role, content, created_at }] current thread */
+  var chatSidebarOpen = false;
+  var chatExitArmed = false;
+  var chatBusy = false;       /* a send/regenerate is in flight */
 
   /* ---------- persistence ---------- */
   function save(key, val) {
@@ -536,6 +913,7 @@
     if (next === 'links') return 'Favoritos…';
     if (next === 'timers') return 'Temporizadores…';
     if (next === 'timer') return 'Temporizador';
+    if (next === 'chat') return 'Ask something...';
     return 'Abrir URL…';
   }
   function setMode(next) {
@@ -546,6 +924,7 @@
     cmdIndicator.hidden = next !== 'command';
     settingsIcon.hidden = (next !== 'settings' && next !== 'links');
     timerIcon.hidden = (next !== 'timer' && next !== 'timers');
+    chatIndicator.hidden = next !== 'chat';
     input.placeholder = placeholderFor(next);
     updateTimerMenu();
   }
@@ -1881,6 +2260,7 @@
     else if (c === 'b') { selectTop('search'); }
     else if (c === 'c') { toggleClock(); input.value = ''; }
     else if (c === 'f') { toggleFullscreen(); input.value = ''; }
+    else if (c === 'j') { enterChat(); }
     else if (c === 'k') { toggleTheme(); input.value = ''; }
     else if (c === 'p') { pullFromServer(); input.value = ''; }
     else if (c === 's' || c === '/' || c === '-') { enterSettings(); }
@@ -1929,9 +2309,497 @@
     else { editArmed = false; deleteArmed = false; enterSettings(); handleSettingsKey(c); }
   }
 
+  /* ---------- AI chat ---------- */
+  /* `j` from command mode enters chat. The logo collapses and the bar docks
+     to the bottom; the left indicator becomes a hamburger, the right sync
+     icon is replaced by a send arrow, and a session sidebar + message area
+     fill the page. Typing `/` then `x` returns to command mode. */
+  function startOfDay(ts) {
+    var d = new Date(ts);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function isSafeLink(url) {
+    var u;
+    try { u = new URL(url); } catch (e) { return false; }
+    return u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:';
+  }
+  /* Inline markdown on already-HTML-escaped text: code spans are pulled out
+     first (so emphasis never runs inside code), then links/emphasis, then
+     code is re-inserted. */
+  function inlineMd(s) {
+    var codes = [];
+    s = s.replace(/`([^`]+)`/g, function (m, c) {
+      codes.push(c);
+      return '\u0000' + (codes.length - 1) + '\u0000';
+    });
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (whole, text, url) {
+      if (!isSafeLink(url)) return whole;
+      return '<a href="' + url.replace(/&/g, '&amp;').replace(/"/g, '&quot;') +
+             '" rel="noopener noreferrer">' + text + '</a>';
+    });
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+    s = s.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, '$1<em>$2</em>');
+    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    s = s.replace(/\u0000(\d+)\u0000/g, function (m, i) {
+      return '<code>' + codes[Number(i)] + '</code>';
+    });
+    return s;
+  }
+  /* Safe block markdown: headings, paragraphs, lists, blockquotes, fenced
+     code. Input is fully HTML-escaped first, so the AI's output can never
+     inject markup. */
+  function blockMd(text) {
+    var lines = escapeHtml(text).split('\n');
+    var html = '';
+    var para = [];
+    var i = 0;
+    function flush() {
+      if (para.length) {
+        html += '<p>' + inlineMd(para.join(' ')) + '</p>';
+        para = [];
+      }
+    }
+    while (i < lines.length) {
+      var line = lines[i];
+      var t = line.trim();
+      var fence = t.match(/^(```+|~~~+)\s*([^ ]*)?$/);
+      if (fence) {
+        flush();
+        var code = [];
+        var ch = fence[1][0];
+        var len = fence[1].length;
+        i++;
+        while (i < lines.length) {
+          if (new RegExp('^' + ch + '{' + len + ',}\\s*$').test(lines[i].trim())) { i++; break; }
+          code.push(lines[i]);
+          i++;
+        }
+        html += '<pre><code>' + code.join('\n') + '</code></pre>';
+        continue;
+      }
+      var h = t.match(/^(#{1,4})\s+(.*)$/);
+      if (h) { flush(); html += '<h' + h[1].length + '>' + inlineMd(h[2]) + '</h' + h[1].length + '>'; i++; continue; }
+      if (t.indexOf('>') === 0) {
+        flush();
+        var q = [];
+        while (i < lines.length && lines[i].trim().indexOf('>') === 0) {
+          q.push(lines[i].trim().replace(/^>\s?/, '')); i++;
+        }
+        html += '<blockquote><p>' + inlineMd(q.join('<br>')) + '</p></blockquote>';
+        continue;
+      }
+      if (/^[-*+]\s+/.test(t)) {
+        flush();
+        html += '<ul>';
+        while (i < lines.length && /^[-*+]\s+/.test(lines[i].trim())) {
+          html += '<li>' + inlineMd(lines[i].trim().replace(/^[-*+]\s+/, '')) + '</li>'; i++;
+        }
+        html += '</ul>';
+        continue;
+      }
+      if (/^\d+\.\s+/.test(t)) {
+        flush();
+        html += '<ol>';
+        while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+          html += '<li>' + inlineMd(lines[i].trim().replace(/^\d+\.\s+/, '')) + '</li>'; i++;
+        }
+        html += '</ol>';
+        continue;
+      }
+      if (t === '') { flush(); i++; continue; }
+      para.push(line);
+      i++;
+    }
+    flush();
+    return html;
+  }
+  /* --- icon markup (same inline-SVG style as the page's mode icons) --- */
+  var SVG_COPY = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15h-.99A2 2 0 0 1 2 13V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  var SVG_TRASH = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+  var SVG_REGEN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
+
+  function enterChat() {
+    setMode('chat');
+    input.value = '';
+    chatBusy = false;
+    chatExitArmed = false;
+    document.body.classList.add('chat-open');
+    chatView.hidden = false;
+    /* replace the right sync indicator with the send arrow */
+    syncIconEl.style.display = 'none';
+    chatSendBtn.hidden = false;
+    chatSendBtn.disabled = true;
+    updateChatSendState();
+    /* fresh thread + refresh the session sidebar */
+    chatSessionId = null;
+    chatMessagesList = [];
+    renderChatMessages();
+    loadChatSessions();
+    input.focus();
+  }
+  function exitChat() {
+    chatExitArmed = false;
+    chatBusy = false;
+    setMode('command');
+    document.body.classList.remove('chat-open');
+    chatView.hidden = true;
+    chatSidebar.classList.remove('open');
+    chatSidebarOpen = false;
+    chatSidebarToggle.setAttribute('aria-expanded', 'false');
+    chatSendBtn.hidden = true;
+    input.value = '';
+    /* restore the sync indicator the chat bar hid (local mode: permanent warn) */
+    if (window.__startSync && window.__startSync.resurfaceIcon) { window.__startSync.resurfaceIcon(); }
+  }
+  function enterChatExit() {
+    chatExitArmed = true;
+    input.value = '';
+    input.placeholder = 'Salir del chat… (x)';
+    chatIndicator.hidden = true;
+    cmdIndicator.hidden = false;
+  }
+  function cancelChatExit() {
+    chatExitArmed = false;
+    chatIndicator.hidden = false;
+    cmdIndicator.hidden = true;
+    input.placeholder = 'Ask something...';
+  }
+  function updateChatSendState() {
+    if (!chatSendBtn) return;
+    chatSendBtn.disabled = !input.value.trim() || chatBusy;
+  }
+  function scrollChatBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
+  function appendChatNotice(text) {
+    var el = document.createElement('div');
+    el.className = 'msg-error';
+    el.textContent = text;
+    chatMessages.appendChild(el);
+    scrollChatBottom();
+  }
+
+  /* --- session sidebar --- */
+  function setChatSidebar(open) {
+    chatSidebarOpen = !!open;
+    chatSidebar.classList.toggle('open', chatSidebarOpen);
+    chatSidebarToggle.setAttribute('aria-expanded', chatSidebarOpen ? 'true' : 'false');
+  }
+  function toggleChatSidebar() { setChatSidebar(!chatSidebarOpen); }
+  /* Start a fresh thread: clear the current session selection, fold the
+     sidebar, and show the 'Think before you ask.' welcome. Guarded so a
+     message that is still streaming can't be reset out from under the UI. */
+  function startNewChat() {
+    if (chatBusy) return;
+    chatSessionId = null;
+    chatMessagesList = [];
+    chatExitArmed = false;
+    setChatSidebar(false);
+    renderChatMessages();
+    renderChatSessionList();
+    loadChatSessions();
+    input.value = '';
+    updateChatSendState();
+    input.focus();
+  }
+  function loadChatSessions() {
+    var access = window.__startChatAccess;
+    if (!access || !access.token()) { chatSessions = []; renderChatSessionList(); return; }
+    fetch(access.base + '/api/chat-sessions', {
+      headers: { 'Authorization': 'Bearer ' + access.token() }
+    }).then(function (r) {
+      if (!r.ok) throw new Error('http_' + r.status);
+      return r.json();
+    }).then(function (data) {
+      chatSessions = (data.sessions || []);
+      renderChatSessionList();
+    }).catch(function () { chatSessions = []; renderChatSessionList(); });
+  }
+  function renderChatSessionList() {
+    chatSessionList.textContent = '';
+    if (!chatSessions.length) {
+      var empty = document.createElement('div');
+      empty.className = 'chat-session-empty';
+      empty.textContent = 'Aún no hay sesiones.';
+      chatSessionList.appendChild(empty);
+      return;
+    }
+    var now = Date.now();
+    var today = startOfDay(now);
+    var yesterday = startOfDay(now - 86400000);
+    var week = startOfDay(now - 6 * 86400000);
+    var groups = [
+      { label: 'Today', items: [] },
+      { label: 'Yesterday', items: [] },
+      { label: 'This Week', items: [] },
+      { label: 'Earlier', items: [] }
+    ];
+    chatSessions.forEach(function (s) {
+      var t = Number(s.updated_at) || 0;
+      if (t >= today) { groups[0].items.push(s); }
+      else if (t >= yesterday) { groups[1].items.push(s); }
+      else if (t >= week) { groups[2].items.push(s); }
+      else { groups[3].items.push(s); }
+    });
+    groups.forEach(function (g) {
+      if (!g.items.length) return;
+      var lab = document.createElement('div');
+      lab.className = 'chat-session-group';
+      lab.textContent = g.label;
+      chatSessionList.appendChild(lab);
+      g.items.forEach(function (s) {
+        var item = document.createElement('div');
+        item.className = 'chat-session-item' + (s.id === chatSessionId ? ' active' : '');
+        item.setAttribute('role', 'listitem');
+        item.textContent = s.title || s.last_message || 'Sesión';
+        item.title = s.title || '';
+        item.addEventListener('mousedown', function (ev) { ev.preventDefault(); openChatSession(s.id); });
+        chatSessionList.appendChild(item);
+      });
+    });
+  }
+  function openChatSession(id) {
+    if (!id) return;
+    var access = window.__startChatAccess;
+    if (!access || !access.token()) { appendChatNotice('No hay conexión con la API.'); return; }
+    chatSessionId = id;
+    chatMessagesList = [];
+    chatExitArmed = false;
+    renderChatMessages();
+    renderChatSessionList();
+    fetch(access.base + '/api/chat-messages?session=' + encodeURIComponent(id), {
+      headers: { 'Authorization': 'Bearer ' + access.token() }
+    }).then(function (r) {
+      if (!r.ok) throw new Error('http_' + r.status);
+      return r.json();
+    }).then(function (data) {
+      chatMessagesList = (data.messages || []).map(function (m) {
+        return { id: m.id, role: m.role, content: m.content, created_at: Number(m.created_at), streaming: false };
+      });
+      renderChatMessages();
+      renderChatSessionList();
+      scrollChatBottom();
+    }).catch(function () { appendChatNotice('No se pudo cargar la sesión.'); });
+  }
+
+  /* --- message rendering + actions --- */
+  function renderChatMessages() {
+    chatMessages.textContent = '';
+    if (!chatMessagesList.length) {
+      var empty = document.createElement('div');
+      empty.className = 'chat-empty';
+      /* the 'Think before you ask.' block-art welcome (a <template>, cloned) */
+      var tpl = document.getElementById('chatEmptyArt');
+      if (tpl && tpl.content && tpl.content.cloneNode) {
+        empty.appendChild(tpl.content.cloneNode(true));
+      } else {
+        empty.textContent = 'Ask something...';
+      }
+      chatMessages.appendChild(empty);
+      return;
+    }
+    chatMessagesList.forEach(function (m) { chatMessages.appendChild(buildMessageEl(m)); });
+  }
+  function buildMessageEl(m) {
+    var wrap = document.createElement('div');
+    wrap.className = 'chat-msg ' + (m.role === 'user' ? 'user' : 'assistant');
+    var bubble = document.createElement('div');
+    bubble.className = 'msg-bubble';
+    if (m.streaming && !m.content) { bubble.textContent = '…'; }
+    else { bubble.innerHTML = blockMd(m.content); }
+    wrap.appendChild(bubble);
+    var actions = document.createElement('div');
+    actions.className = 'msg-actions';
+    actions.appendChild(actionBtn(SVG_COPY, 'Copiar', function () { copyMessage(m.content); }));
+    actions.appendChild(actionBtn(SVG_TRASH, 'Borrar', function () { deleteMessage(m); }));
+    if (m.role === 'assistant' && !m.streaming) {
+      actions.appendChild(actionBtn(SVG_REGEN, 'Regenerar', function () { regenerateMessage(m); }));
+    }
+    wrap.appendChild(actions);
+    return wrap;
+  }
+  function actionBtn(svg, label, onClick) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'msg-action';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    btn.innerHTML = svg;
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+  function copyMessage(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(function () {});
+    } else if (document.execCommand) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  }
+  function deleteMessage(m) {
+    var access = window.__startChatAccess;
+    if (!access || !access.token()) return;
+    var removed = false;
+    fetch(access.base + '/api/chat-messages?id=' + encodeURIComponent(m.id), {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + access.token() }
+    }).then(function () {
+      var idx = chatMessagesList.indexOf(m);
+      if (idx !== -1) { chatMessagesList.splice(idx, 1); removed = true; }
+      renderChatMessages();
+      if (removed) loadChatSessions();
+    }).catch(function () {});
+  }
+
+  /* --- streaming a conversation turn (send + regenerate) --- */
+  function consumeChatStream(reader, onEvent) {
+    var decoder = new TextDecoder();
+    var buf = '';
+    function handleLine(line) {
+      line = line.trim();
+      if (!line) return;
+      var obj;
+      try { obj = JSON.parse(line); } catch (e) { return; }
+      if (obj && obj.type) { onEvent(obj); }
+    }
+    function step() {
+      return reader.read().then(function (r) {
+        if (r.done) { if (buf.trim()) handleLine(buf.trim()); return; }
+        buf += decoder.decode(r.value, { stream: true });
+        var idx;
+        while ((idx = buf.indexOf('\n')) !== -1) {
+          var line = buf.slice(0, idx); buf = buf.slice(idx + 1);
+          handleLine(line);
+        }
+        return step();
+      });
+    }
+    return step();
+  }
+
+  function sendChatMessage() {
+    if (mode !== 'chat' || chatBusy) return;
+    var text = input.value.trim();
+    if (!text) return;
+    var access = window.__startChatAccess;
+    if (!access || !access.token()) {
+      appendChatNotice('El chat necesita la sincronización: entra con tu contraseña.');
+      return;
+    }
+    chatBusy = true;
+    updateChatSendState();
+    var userMsg = { id: 'local-' + Date.now(), role: 'user', content: text, created_at: Date.now(), streaming: false };
+    chatMessagesList.push(userMsg);
+    renderChatMessages();
+    scrollChatBottom();
+    input.value = '';
+    updateChatSendState();
+    var reqSessionId = chatSessionId;
+    fetch(access.base + '/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + access.token() },
+      body: JSON.stringify({ sessionId: chatSessionId, message: text })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('http_' + r.status);
+      return r.body.getReader();
+    }).then(function (reader) {
+      return consumeChatStream(reader, function (obj) {
+        if (obj.type === 'meta') {
+          chatSessionId = obj.sessionId;
+          if (obj.userMessageId) { userMsg.id = obj.userMessageId; }
+          /* insert a placeholder assistant bubble that receives deltas */
+          chatMessagesList.push({ id: obj.assistantMessageId, role: 'assistant', content: '', created_at: Date.now(), streaming: true });
+          renderChatMessages();
+          scrollChatBottom();
+        } else if (obj.type === 'delta') {
+          var last = chatMessagesList[chatMessagesList.length - 1];
+          if (last && last.streaming) { last.content += obj.text; renderChatMessages(); scrollChatBottom(); }
+        } else if (obj.type === 'done') {
+          var l = chatMessagesList[chatMessagesList.length - 1];
+          if (l && l.streaming) { l.streaming = false; }
+          chatBusy = false;
+          updateChatSendState();
+          renderChatMessages();
+          loadChatSessions();
+        } else if (obj.type === 'error') {
+          var l2 = chatMessagesList[chatMessagesList.length - 1];
+          if (l2 && l2.streaming) { chatMessagesList.pop(); }
+          appendChatNotice('La IA no pudo responder. Revisa AI_MODEL y AI_API_KEY.');
+          chatBusy = false;
+          updateChatSendState();
+          renderChatMessages();
+          loadChatSessions();
+        }
+      });
+    }).catch(function () {
+      appendChatNotice('No se pudo enviar. Revisa tu conexión.');
+      chatBusy = false;
+      updateChatSendState();
+      renderChatMessages();
+    });
+  }
+
+  function regenerateMessage(m) {
+    if (chatBusy || !chatSessionId || !m.id) return;
+    var access = window.__startChatAccess;
+    if (!access || !access.token()) return;
+    chatBusy = true;
+    updateChatSendState();
+    m.content = '';
+    m.streaming = true;
+    renderChatMessages();
+    scrollChatBottom();
+    fetch(access.base + '/api/chat-messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + access.token() },
+      body: JSON.stringify({ sessionId: chatSessionId, assistantMessageId: m.id })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('http_' + r.status);
+      return r.body.getReader();
+    }).then(function (reader) {
+      return consumeChatStream(reader, function (obj) {
+        if (obj.type === 'delta') { m.content += obj.text; renderChatMessages(); scrollChatBottom(); }
+        else if (obj.type === 'done') { m.streaming = false; chatBusy = false; updateChatSendState(); renderChatMessages(); loadChatSessions(); }
+        else if (obj.type === 'error') { m.streaming = false; chatBusy = false; updateChatSendState(); renderChatMessages(); appendChatNotice('No se pudo regenerar.'); loadChatSessions(); }
+      });
+    }).catch(function () {
+      m.streaming = false;
+      chatBusy = false;
+      updateChatSendState();
+      renderChatMessages();
+      appendChatNotice('No se pudo regenerar.');
+    });
+  }
+
+  chatSidebarToggle.addEventListener('click', toggleChatSidebar);
+  chatNewBtn.addEventListener('click', startNewChat);
+  chatSendBtn.addEventListener('click', function () { sendChatMessage(); input.focus(); });
+
   input.addEventListener('input', function () {
     var v = input.value;
     var c = v.toLowerCase();   /* commands are case-insensitive */
+    if (mode === 'chat') {
+      /* typing `/` arms exit, `x` confirms; any other char cancels it */
+      if (chatExitArmed) {
+        if (c === 'x') { exitChat(); return; }
+        cancelChatExit();
+      } else if (v === '/') {
+        enterChatExit();
+        return;
+      }
+      updateChatSendState();
+      return;
+    }
     if (mode === 'url' || mode === 'search') {
       if (c === 'aaa' || c === '/' || c === '-') { enterCmd(); }
       else if (mode === 'url') { updateHistoryMenu(); }
@@ -1955,6 +2823,15 @@
      the bar is focused in COMMAND mode (no modifiers, no repeat). In
      url/search/settings the digits type into the bar normally. */
   input.addEventListener('keydown', function (e) {
+    /* chat mode: Escape only cancels a pending `/x` exit; it never climbs a
+       mode stack or clears the message draft. */
+    if (mode === 'chat') {
+      if (e.key === 'Escape') {
+        if (chatExitArmed) { cancelChatExit(); }
+        e.preventDefault();
+        return;
+      }
+    }
     /* url mode with the history dropdown open: arrows move the highlight,
        Enter opens the highlighted row (row 0 = "Abrir este URL…" opens the
        typed text — but only when the typed text is a valid URL; for garbage
@@ -2040,6 +2917,9 @@
      element normally). Modifier combos (ctrl/meta/alt) are never hijacked. */
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    /* while in chat mode the page-level shortcuts (a/s/t/c/k/z/r/x/digits)
+       must not hijack keys — chat owns the keyboard here */
+    if (mode === 'chat') return;
     /* Never hijack keys while ANY editable element has focus — not just the
        search bar (a textarea or contenteditable could be added later). */
     var ae = document.activeElement;
@@ -2089,6 +2969,7 @@
   });
 
   form.addEventListener('submit', function (e) {
+    if (mode === 'chat') { e.preventDefault(); sendChatMessage(); return; }
     if (mode === 'url') { e.preventDefault(); openUrl(); return; }
     if (mode === 'timer') { e.preventDefault(); commitTimer(); return; }
     if (mode === 'links') {
@@ -2404,6 +3285,21 @@
       writeTs(ts);
       if (readyToPush) schedulePush();
     }
+  };
+  /* The AI chat (main IIFE) fetches its own API routes with the same bearer
+     token; expose the base URL + a live token getter (the token can be cleared
+     by a 401 logout). `local` lets the chat fall back gracefully. */
+  window.__startChatAccess = {
+    base: API_BASE,
+    token: function () { return token; },
+    local: isLocalMode
+  };
+  /* The chat bar hides the sync indicator while it is open; restore its state
+     when the user exits so local mode keeps its permanent warning and
+     connected mode re-hides it (it is transient there). */
+  window.__startSync.resurfaceIcon = function () {
+    if (isLocalMode()) { showSyncIcon('warn'); }
+    else { syncIcon.style.display = 'none'; }
   };
 
   /* ---------- init ---------- */
