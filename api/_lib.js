@@ -40,7 +40,7 @@ function corsOrigin(req) {
 function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
     'Vary': 'Origin',
     'Cache-Control': 'no-store'
@@ -207,9 +207,82 @@ async function upsertAll(items) {
   }
 }
 
+/* ---------- AI chat store ---------- */
+/* Single-user chat history: sessions + messages. All timestamps are ms.
+   The chat API is authenticated with the same bearer token as /api/data. */
+
+/* Look up one session (id, title, created_at, updated_at) or null. */
+async function getChatSession(id) {
+  if (!id) return null;
+  var res = await getPool().query('SELECT id, title, created_at, updated_at FROM chat_sessions WHERE id = $1', [id]);
+  return res.rows.length ? res.rows[0] : null;
+}
+/* Create a session (idempotent-ish: an existing id just wins). */
+async function createChatSession(id, title, now) {
+  await getPool().query(
+    'INSERT INTO chat_sessions (id, title, created_at, updated_at) VALUES ($1, $2, $3, $3) ' +
+    'ON CONFLICT (id) DO NOTHING',
+    [id, title, now]
+  );
+}
+/* List sessions newest-first, each with the last message's content as a
+   preview for the sidebar. */
+async function listChatSessions() {
+  var res = await getPool().query(
+    'SELECT s.id, s.title, s.created_at, s.updated_at, m.content AS last_message ' +
+    'FROM chat_sessions s ' +
+    'LEFT JOIN LATERAL (' +
+    '  SELECT content FROM chat_messages WHERE session_id = s.id ' +
+    '  ORDER BY created_at DESC, id DESC LIMIT 1' +
+    ') m ON true ' +
+    'ORDER BY s.updated_at DESC'
+  );
+  return res.rows;
+}
+/* All messages of a session, in thread order. */
+async function getChatMessages(sessionId) {
+  var res = await getPool().query(
+    'SELECT id, session_id, role, content, created_at FROM chat_messages ' +
+    'WHERE session_id = $1 ORDER BY created_at ASC, id ASC',
+    [sessionId]
+  );
+  return res.rows;
+}
+/* Insert a message (user or assistant). */
+async function insertChatMessage(id, sessionId, role, content, now) {
+  await getPool().query(
+    'INSERT INTO chat_messages (id, session_id, role, content, created_at) VALUES ($1, $2, $3, $4, $5)',
+    [id, sessionId, role, content, now]
+  );
+}
+/* Replace an assistant message's content in place (regenerate keeps the id +
+   position; created_at is left untouched). */
+async function updateChatMessageContent(id, content) {
+  await getPool().query('UPDATE chat_messages SET content = $2 WHERE id = $1', [id, content]);
+}
+/* Bump a session's updated_at (server time) so it rises in the sidebar. */
+async function touchChatSession(id, now) {
+  await getPool().query('UPDATE chat_sessions SET updated_at = $2 WHERE id = $1', [id, now]);
+}
+/* Set the session title (from the first user message). */
+async function setChatSessionTitle(id, title, now) {
+  await getPool().query('UPDATE chat_sessions SET title = $2, updated_at = $3 WHERE id = $1', [id, title, now]);
+}
+/* Delete a session (cascades to its messages). */
+async function deleteChatSession(id) {
+  await getPool().query('DELETE FROM chat_sessions WHERE id = $1', [id]);
+}
+/* Delete a single message. */
+async function deleteChatMessage(id) {
+  await getPool().query('DELETE FROM chat_messages WHERE id = $1', [id]);
+}
+
 module.exports = {
   send: send,
   preflight: preflight,
+  corsOrigin: corsOrigin,
+  corsHeaders: corsHeaders,
+  getPool: getPool,
   verifyPassword: verifyPassword,
   signToken: signToken,
   verifyToken: verifyToken,
@@ -217,5 +290,15 @@ module.exports = {
   recordFailure: recordFailure,
   clearRateLimit: clearRateLimit,
   getAll: getAll,
-  upsertAll: upsertAll
+  upsertAll: upsertAll,
+  getChatSession: getChatSession,
+  createChatSession: createChatSession,
+  listChatSessions: listChatSessions,
+  getChatMessages: getChatMessages,
+  insertChatMessage: insertChatMessage,
+  updateChatMessageContent: updateChatMessageContent,
+  touchChatSession: touchChatSession,
+  setChatSessionTitle: setChatSessionTitle,
+  deleteChatSession: deleteChatSession,
+  deleteChatMessage: deleteChatMessage
 };

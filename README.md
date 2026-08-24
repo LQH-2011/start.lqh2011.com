@@ -230,6 +230,32 @@ after that the device holds a token and behaves exactly as before.
   Sync failures are silent (console) and self-healing. (The one exception is
   **local mode**, which intentionally shows a banner + a permanent warning icon.)
 
+## AI chat (`j` from command mode)
+
+A full chat UI built into the start page, powered by the same Vercel API + Neon
+DB as the sync backend (single-user; you must be logged in with a synced token).
+
+- **Enter**: in command mode press `j`. The logo collapses and the search bar
+  docks to the bottom with smooth transitions; the left mode indicator becomes
+  a hamburger and the right sync icon is replaced by a send (up-arrow) button.
+  The placeholder is `Pregunta algo...`. **Exit**: type `/` then `x` — it returns
+  to command mode with the normal logo/bar layout.
+- **Send**: type in the bar and press Enter (or click the arrow). The reply
+  streams in as it's generated; both the user message and the bot reply are
+  rendered as markdown (headings, lists, code blocks, links, emphasis).
+- **Per-message actions**: copy and delete under *every* message; regenerate
+  under bot messages. All write through the API.
+- **Session sidebar**: a hamburger at the top-left slides in the past sessions,
+  sorted by most-recent use and grouped into *Hoy / Ayer / Esta semana /
+  Anteriores*. Clicking a session loads its thread; the title is generated from the
+  first message of the thread. Un botón **Nueva conversación** at the top of the sidebar
+  starts a fresh thread, and a blank thread shows the "Think before you ask."
+  block-art welcome (same 5×7 pixel-glyph style as the logo, at quarter scale).
+- **Persistence**: sessions + messages live in Neon (`chat_sessions`,
+  `chat_messages`). The AI provider (any OpenAI-compatible base URL) is proxied
+  server-side via `AI_BASE_URL`, `AI_MODEL`, `AI_API_KEY` — the key never leaves
+  the server. See the Deploy section.
+
 ## Editing the logo
 
 Glyph maps live in the 5×7 grid definitions inside the `<svg>` `<defs>`; each glyph is a
@@ -293,8 +319,11 @@ https://start-api.lqh2011.com.
 1. Create a project at https://console.neon.tech (free tier is plenty — one table).
 2. Copy the **pooled** connection string (Project Dashboard → Connect → Pooled,
    looks like `postgres://…-pooler…`). It contains the DB password.
-3. Create the table — run `schema.sql` (one table, `kv`). Easiest: paste it into
-   Neon's SQL editor; or `psql "$DATABASE_URL" -f schema.sql`.
+3. Create the tables — run `schema.sql` (the sync `kv` table **and** the AI chat
+   `chat_sessions` + `chat_messages` tables; all are `CREATE ... IF NOT EXISTS`, so
+   re-running is safe, but existing deployments need to run it once again to add
+   the chat tables). Easiest: paste it into Neon's SQL editor; or
+   `psql "$DATABASE_URL" -f schema.sql`.
 
 ### 2. Secrets (local)
 
@@ -308,8 +337,9 @@ Save the password somewhere safe — it's what you'll type on each new device.
 ### 3. Vercel (API)
 
 1. Import this repo at https://vercel.com/new (Framework Preset: **Other**).
-   Vercel auto-detects the `api/` directory and deploys `POST /api/auth` and
-   `GET|POST /api/data` as serverless functions.
+   Vercel auto-detects the `api/` directory and deploys `/api/auth`,
+   `/api/data`, and the AI chat routes (`/api/chat`, `/api/chat-sessions`,
+   `/api/chat-messages`) as serverless functions.
 2. Add these Environment Variables to the project (Settings → Environment Variables).
    Add each one to **both the Production and Preview environments** — the
    preview (e.g. `preview.lqh2011.com`) needs the same API env vars, otherwise
@@ -321,6 +351,12 @@ Save the password somewhere safe — it's what you'll type on each new device.
      call the API; defaults to `https://start.lqh2011.com`. Set it in **both**
      environments and keep the preview alias in the value:
      `https://start.lqh2011.com,https://preview.lqh2011.com`
+   - **AI chat** (only needed for the built-in chat feature) — an
+     OpenAI-compatible provider proxied server-side, so the key never reaches
+     the browser:
+     - `AI_BASE_URL` — e.g. `https://api.deepseek.com/v1` (no trailing slash)
+     - `AI_MODEL` — e.g. `deepseek-chat`
+     - `AI_API_KEY` — the provider API key
 3. Deploy; the API lives at `https://<your-project>.vercel.app/api/…`.
 
 ### 4. DNS (subdomain)
@@ -366,7 +402,8 @@ including when a PR is opened after its preview was already built (the
 ### Local development
 
 ```sh
-cp .env.example .env    # fill DATABASE_URL, AUTH_PASSWORD_HASH, AUTH_TOKEN_SECRET
+cp .env.example .env    # fill DATABASE_URL, AUTH_PASSWORD_HASH, AUTH_TOKEN_SECRET,
+                        # and (for chat) AI_BASE_URL, AI_MODEL, AI_API_KEY
 npm install
 npm run dev             # http://127.0.0.1:8787 — page + API, one origin, real Postgres
 ```
@@ -378,6 +415,10 @@ browser (any device)                Vercel (serverless)         Neon
   start.lqh2011.com                   start-api.lqh2011.com      kv table
   index.html (GH Pages)    ──HTTPS──▶  /api/auth (password→token)
   localStorage + token     ◀──CORS───  /api/data (GET/POST kv)  ──▶ Postgres
+                                            /api/chat (streams AI reply,
+                                            proxies AI_BASE_URL)  chat_sessions
+                                            /api/chat-sessions      chat_messages
+                                            /api/chat-messages
 ```
 Auth: one password, verified with scrypt against `AUTH_PASSWORD_HASH`; successful
 login returns an HMAC-signed token (90-day expiry) stored per device. Failed logins

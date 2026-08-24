@@ -23,6 +23,9 @@ var path = require('path');
 
 var authHandler = require('../api/auth.js');
 var dataHandler = require('../api/data.js');
+var chatHandler = require('../api/chat.js');
+var chatSessionsHandler = require('../api/chat-sessions.js');
+var chatMessagesHandler = require('../api/chat-messages.js');
 
 function readBody(req) {
   return new Promise(function (resolve) {
@@ -41,6 +44,10 @@ function makeRes(res) {
   var headers = {};
   return {
     setHeader: function (k, v) { headers[k] = v; },
+    /* streaming support for the chat endpoints (Vercel Node ServerResponse) */
+    writeHead: function (code, obj) { res.writeHead(code, obj || {}); },
+    write: function (chunk) { res.write(chunk); },
+    end: function () { res.end(); },
     status: function (code) {
       return {
         json: function (obj) {
@@ -79,6 +86,9 @@ var server = http.createServer(async function (req, res) {
   try {
     if (url.pathname === '/api/auth') await authHandler(fakeReq, fakeRes);
     else if (url.pathname === '/api/data') await dataHandler(fakeReq, fakeRes);
+    else if (url.pathname === '/api/chat') await chatHandler(fakeReq, fakeRes);
+    else if (url.pathname === '/api/chat-sessions') await chatSessionsHandler(fakeReq, fakeRes);
+    else if (url.pathname === '/api/chat-messages') await chatMessagesHandler(fakeReq, fakeRes);
     else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'not_found' }));
