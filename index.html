@@ -3078,13 +3078,10 @@
 (function () {
   'use strict';
 
-  var API_BASE = 'https://start-api.lqh2011.com';
-  /* same-origin fallback: Vercel also serves the static page, so opening the
-     API host directly talks to the API with no CORS involved; likewise when
-     served locally by scripts/dev-server.js (npm run dev) */
-  if (['start-api.lqh2011.com', 'localhost', '127.0.0.1'].indexOf(location.hostname) !== -1) {
-    API_BASE = '';
-  }
+  /* Page and API are same-origin on Vercel (start.lqh2011.com and the
+     preview alias), so the API is reached by relative path — no CORS, no
+     separate API host, single-origin standard architecture. */
+  var API_BASE = '';
 
   /* Device-specific keys (theme) are intentionally NOT listed: start.theme
      stays in localStorage only, so each device keeps its own light/dark/
