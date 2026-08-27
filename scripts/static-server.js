@@ -1,7 +1,7 @@
 /* Dependency-free static server for the UI smoke tests.
    Serves ONLY index.html (the page has no other local assets) so the tests
-   never leak other repo files. The sync module sets API_BASE='' when served
-   from 127.0.0.1, so its /api/data fetch hits this server, gets a 404, and
+   never leak other repo files. The sync module uses API_BASE='' (same-origin),
+   so its /api/data fetch hits this server, gets a 404, and
    falls back to the local-first path — no real API involved, no CORS, no
    auth overlay. Usage: node scripts/static-server.js [port] (default 8123) */
 'use strict';

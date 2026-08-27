@@ -310,9 +310,10 @@ to regenerate if you want bigger cells, different glyphs, or a different shadow 
 
 ## Deploy
 
-The **frontend stays on GitHub Pages** (push to `main`, https://start.lqh2011.com —
-unchanged). The **sync backend** is Vercel serverless functions + Neon Postgres at
-https://start-api.lqh2011.com.
+The **frontend and API are served by one Vercel project** at
+https://start.lqh2011.com — the static `index.html` plus the `api/` serverless
+functions, same-origin, with Neon Postgres for storage. (The former
+`start-api.lqh2011.com` subdomain is retired; there is no separate API host.)
 
 ### 1. Neon (database)
 
@@ -359,12 +360,12 @@ Save the password somewhere safe — it's what you'll type on each new device.
      - `AI_API_KEY` — the provider API key
 3. Deploy; the API lives at `https://<your-project>.vercel.app/api/…`.
 
-### 4. DNS (subdomain)
+### 4. DNS (one domain)
 
-The main site's DNS does **not** move. In your DNS provider's panel add one record:
-`start-api` CNAME → `cname.vercel-dns.com`.
-Vercel provisions the TLS certificate automatically. The page already targets
-`https://start-api.lqh2011.com`; no frontend change needed.
+The page and API share one origin, so only **one** record is needed: point
+`start.lqh2011.com` at Vercel — `start.lqh2011.com` CNAME → `cname.vercel-dns.com`.
+Vercel provisions the TLS certificate automatically. No `start-api` subdomain
+is required anymore.
 
 ### 5. Preview alias (preview.lqh2011.com)
 
@@ -377,7 +378,7 @@ Setup once:
 
 1. Vercel → project → **Settings → Domains** → Add `preview.lqh2011.com`.
 2. DNS provider: `preview` CNAME → `cname.vercel-dns.com` (same target as
-   `start-api`).
+   `start.lqh2011.com`).
 3. Vercel → **Account Settings → Tokens** (https://vercel.com/account/tokens)
    → Create Token → scope **Full Account**. This must be a *classic personal*
    token: team- or project-scoped tokens have no user identity, and the
@@ -408,19 +409,24 @@ npm install
 npm run dev             # http://127.0.0.1:8787 — page + API, one origin, real Postgres
 ```
 
+> **Note:** the AI chat endpoints reject a non-allowlisted origin with
+> `403 origin_not_allowed`. To exercise chat in local `npm run dev`, include the
+> local origin in `ALLOWED_ORIGIN` in `.env`, e.g.
+> `ALLOWED_ORIGIN=http://127.0.0.1:8787`.
+
 ### How it fits together
 
 ```text
-browser (any device)                Vercel (serverless)         Neon
-  start.lqh2011.com                   start-api.lqh2011.com      kv table
-  index.html (GH Pages)    ──HTTPS──▶  /api/auth (password→token)
-  localStorage + token     ◀──CORS───  /api/data (GET/POST kv)  ──▶ Postgres
-                                            /api/chat (streams AI reply,
-                                            proxies AI_BASE_URL)  chat_sessions
-                                            /api/chat-sessions      chat_messages
-                                            /api/chat-messages
+browser (any device)             Vercel (one project · one origin)      Neon
+  start.lqh2011.com                     /api/auth  (password → token)   kv table
+  index.html (static)  ──HTTPS──▶       /api/data  (GET/POST kv)   ──▶  Postgres
+  localStorage + token     same-origin  /api/chat  (streams AI reply,        chat_sessions
+                                        proxies AI_BASE_URL)                chat_messages
+                                        /api/chat-sessions
+                                        /api/chat-messages
 ```
 Auth: one password, verified with scrypt against `AUTH_PASSWORD_HASH`; successful
 login returns an HMAC-signed token (90-day expiry) stored per device. Failed logins
 are rate-limited per IP (10 per 15 min) — but a correct password is never blocked.
-The API sets CORS headers for `start.lqh2011.com` and answers OPTIONS preflights.
+The page and API share an origin, so no CORS is needed on the normal path; the API
+still echoes allowed origins (safety net) and answers OPTIONS preflights.
