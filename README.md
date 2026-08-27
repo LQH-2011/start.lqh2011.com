@@ -409,9 +409,11 @@ npm install
 npm run dev             # http://127.0.0.1:8787 — page + API, one origin, real Postgres
 ```
 
-> **Note:** the AI chat endpoints reject a non-allowlisted origin with
-> `403 origin_not_allowed`. To exercise chat in local `npm run dev`, include the
-> local origin in `ALLOWED_ORIGIN` in `.env`, e.g.
+> **Note:** the AI chat endpoints check authentication **before** the origin
+> check, so for an **authenticated** request a non-allowlisted origin gets
+> `403 origin_not_allowed` (an unauthenticated request from any origin gets
+> `401` first). To exercise chat in local `npm run dev`, include the local
+> origin in `ALLOWED_ORIGIN` in `.env`, e.g.
 > `ALLOWED_ORIGIN=http://127.0.0.1:8787`.
 
 ### How it fits together
