@@ -43,14 +43,15 @@ async function mockChat(page, opts) {
   await page.route('**/api/chat-sessions', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sessions }) }));
 
-  await page.route('**/api/chat-messages*', (r) => {
+  await page.route('**/api/chat-messages*', async (r) => {
     if (r.request().method() === 'DELETE') {
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     }
     if (r.request().method() === 'POST') {
       return r.fulfill({ status: 200, contentType: 'application/x-ndjson', body: chatStream({ sessionId: 'sess-1', deltas: ['Regenerated reply.'] }) });
     }
-    /* GET ?session=<id> */
+    /* GET ?session=<id> — optional delay so a loading spinner is observable */
+    if (o.messagesDelay) { await new Promise((res) => setTimeout(res, o.messagesDelay)); }
     const url = new URL(r.request().url());
     const sid = url.searchParams.get('session') || 'sess-1';
     return r.fulfill({ status: 200, contentType: 'application/json',
@@ -250,4 +251,140 @@ test('deleting a message removes it from the thread (mocked DELETE)', async ({ p
   /* delete the user message (trash action) */
   await page.locator('#chatMessages .chat-msg.user .msg-action').nth(1).click();
   await expect(page.locator('#chatMessages .chat-msg.user')).toHaveCount(0);
+});
+
+/* ---------- indicator overlap on '/' ---------- */
+
+test('pressing / in chat hides the hamburger so only the ❯ exit indicator shows', async ({ page }) => {
+  await mockChat(page);
+  await page.goto('/');
+  await enterChat(page);
+
+  /* in chat mode the three-line hamburger is the left indicator */
+  await expect(page.locator('#chatIndicator')).toBeVisible();
+  await expect(page.locator('#cmdIndicator')).toBeHidden();
+
+  /* arming exit shows ❯ and must NOT leave the hamburger painted on top */
+  await typeInBar(page, '/');
+  await expect(page.locator('#chatIndicator')).toBeHidden();
+  await expect(page.locator('#cmdIndicator')).toBeVisible();
+});
+
+/* ---------- typing-bar fixed width ---------- */
+
+test('the typing bar keeps a fixed max-width when the sidebar opens (no shrink/slide)', async ({ page }) => {
+  await mockChat(page);
+  await page.goto('/');
+  await enterChat(page);
+  const maxW = () => page.locator('form.search').evaluate((el) => getComputedStyle(el).maxWidth);
+
+  /* let the chat-entry max-width transition settle, then measure */
+  await page.waitForTimeout(450);
+  const before = await maxW();
+  await page.locator('#chatSidebarToggle').click();
+  await expect(page.locator('#chatSidebar')).toHaveClass(/open/);
+  /* next assertion only after the sidebar-open transition settles */
+  await page.waitForTimeout(400);
+  const after = await maxW();
+  expect(after).toBe(before);
+});
+
+/* ---------- mobile drawer + backdrop ---------- */
+
+test('mobile: the sidebar is a drawer on top with a grey backdrop that folds on tap', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockChat(page, { sessions: [{ id: 's1', title: 'Thread', updated_at: Date.now() }] });
+  await page.goto('/');
+  await enterChat(page);
+
+  /* on desktop the backdrop is never rendered; on mobile it appears opened */
+  const backdrop = page.locator('#chatSidebarBackdrop');
+  await expect(backdrop).not.toHaveClass(/open/);
+
+  await page.locator('#chatSidebarToggle').click();
+  await expect(page.locator('#chatSidebar')).toHaveClass(/open/);
+  await expect(backdrop).toHaveClass(/open/);
+  /* let the scrim's opacity transition finish, then assert it is opaque */
+  await page.waitForTimeout(350);
+  const op = await backdrop.evaluate((el) => getComputedStyle(el).opacity);
+  expect(op).toBe('1');
+
+  /* tapping the uncovered (right) area of the scrim folds the drawer */
+  await backdrop.click({ position: { x: 360, y: 400 } });
+  await expect(page.locator('#chatSidebar')).not.toHaveClass(/open/);
+  await expect(backdrop).not.toHaveClass(/open/);
+});
+
+test('desktop: the sidebar slides over (no backdrop rendered) and pushes the thread', async ({ page }) => {
+  await mockChat(page);
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await expect(page.locator('#chatSidebar')).toHaveClass(/open/);
+  /* the backdrop stays display:none on widths above the breakpoint */
+  const disp = await page.locator('#chatSidebarBackdrop').evaluate((el) => getComputedStyle(el).display);
+  expect(disp).toBe('none');
+});
+
+/* ---------- loading a past conversation ---------- */
+
+test('loading a past session shows a spinner, not the "Think before you ask." welcome', async ({ page }) => {
+  await mockChat(page, {
+    sessions: [{ id: 's1', title: 'Load me', updated_at: Date.now() }],
+    messages: { s1: [{ id: 'm1', role: 'assistant', content: 'Loaded reply', created_at: Date.now() }] },
+    messagesDelay: 350
+  });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await page.locator('.chat-session-item').first().click();
+
+  /* while fetching: a spinner, and no new-thread welcome */
+  await expect(page.locator('#chatMessages .chat-loading .spinner')).toBeVisible();
+  await expect(page.locator('#chatMessages .chat-ascii')).toBeHidden();
+
+  /* once loaded the message renders and the spinner is gone */
+  await expect(page.locator('#chatMessages .chat-msg.assistant .msg-bubble')).toHaveText('Loaded reply');
+  await expect(page.locator('#chatMessages .chat-loading')).toBeHidden();
+});
+
+/* ---------- markdown tables + inline code ---------- */
+
+test('markdown tables render with a bordered table structure', async ({ page }) => {
+  const messages = {
+    s1: [{ id: 'm1', role: 'assistant',
+           content: '| Name | Age |\n|---|---|\n| Alice | 30 |\n| Bob | **25** |',
+           created_at: Date.now() }]
+  };
+  await mockChat(page, { sessions: [{ id: 's1', title: 'T', updated_at: Date.now() }], messages });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await page.locator('.chat-session-item').first().click();
+
+  await expect(page.locator('#chatMessages table')).toHaveCount(1);
+  await expect(page.locator('#chatMessages table th')).toHaveCount(2);
+  await expect(page.locator('#chatMessages table th').first()).toHaveText('Name');
+  /* two body rows, each with the header's column count */
+  await expect(page.locator('#chatMessages table tbody tr')).toHaveCount(2);
+  await expect(page.locator('#chatMessages table tbody td')).toHaveCount(4);
+  /* inline markdown works inside a cell */
+  await expect(page.locator('#chatMessages table tbody tr').first()).toContainText('Alice');
+});
+
+test('inline code keeps readable (ink) text on its chip, not white-on-white', async ({ page }) => {
+  await mockChat(page);
+  await page.goto('/');
+  await enterChat(page);
+  await typeInBar(page, 'Run `npm test` please');
+  await page.locator('#q').press('Enter');
+
+  const code = page.locator('#chatMessages .chat-msg.user .msg-bubble code');
+  await expect(code).toHaveText('npm test');
+  const colors = await code.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { color: cs.color, bg: cs.backgroundColor };
+  });
+  /* text colour must differ from its own chip background (the old white-on-white bug) */
+  expect(colors.color).not.toBe(colors.bg);
 });
