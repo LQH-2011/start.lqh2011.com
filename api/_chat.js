@@ -36,6 +36,38 @@ function deriveTitle(message) {
   return t;
 }
 
+/* Ask the AI to name a conversation. `messages` is [{role, content}] (the new
+   thread's first message, or a whole thread for regenerate). Returns a short,
+   cleaned title string; returns '' when there is no title, and rejects on a
+   provider/network failure (callers decide whether to keep the derived title).
+   Unlike the `stream:true` chat call, this is a single non-streaming request,
+   so it is cheap and safe to run in the background on a new thread. */
+async function generateTitle(messages) {
+  var text = (messages || []).map(function (m) { return m.content; }).join('\n');
+  if (!text) return '';
+  text = text.slice(0, 3000);
+  var prov = await fetch(providerUrl(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json',
+               'Authorization': 'Bearer ' + process.env.AI_API_KEY },
+    body: JSON.stringify({
+      model: process.env.AI_MODEL,
+      stream: false,
+      messages: [
+        { role: 'system',
+          content: 'You create short titles for chat conversations. Reply with ONLY a title of at most 8 words. No quotes, no full stop, no explanation.' },
+        { role: 'user', content: text }
+      ]
+    })
+  });
+  if (!prov.ok) throw new Error('ai_' + prov.status);
+  var data = await prov.json();
+  var content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  var t = String(content || '').replace(/\s+/g, ' ').trim();
+  t = t.replace(/^["'“”]+|["'“”]+$/g, '');
+  return t.slice(0, 80);
+}
+
 /* Crypto-random id for sessions/messages. */
 function uuid() {
   return crypto.randomUUID();
@@ -84,6 +116,7 @@ module.exports = {
   requireAuth: requireAuth,
   jsonLine: jsonLine,
   deriveTitle: deriveTitle,
+  generateTitle: generateTitle,
   uuid: uuid,
   validId: validId,
   parseProviderLine: parseProviderLine,

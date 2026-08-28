@@ -40,8 +40,25 @@ async function mockChat(page, opts) {
   await page.route('**/api/data', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: {} }) }));
 
-  await page.route('**/api/chat-sessions', (r) =>
-    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sessions }) }));
+  await page.route('**/api/chat-sessions*', (r) => {
+    const m = r.request().method();
+    /* rename (PATCH) echoes the title we were sent */
+    if (m === 'PATCH') {
+      let title = 'Renamed';
+      try { title = JSON.parse(r.request().postData()).title; } catch (e) {}
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, title }) });
+    }
+    /* regenerate title (POST) returns a canned title */
+    if (m === 'POST') {
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, title: o.generatedTitle || 'AI title' }) });
+    }
+    /* delete (DELETE) */
+    if (m === 'DELETE') {
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    }
+    /* GET list */
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sessions }) });
+  });
 
   await page.route('**/api/chat-messages*', async (r) => {
     if (r.request().method() === 'DELETE') {
@@ -142,10 +159,10 @@ test('sidebar toggle slides in and folds; session list is grouped by time', asyn
   await expect(page.locator('.chat-session-item')).toHaveCount(4);
   const labels = await page.locator('.chat-session-group').allTextContents();
   expect(labels).toEqual(['Hoy', 'Ayer', 'Esta semana', 'Anteriores']);
-  await expect(page.locator('.chat-session-item').first()).toHaveText('Today query');
+  await expect(page.locator('.chat-session-item').first()).toHaveText('Today query', { useInnerText: true });
 
-  /* clicking again folds it */
-  await toggle.click();
+  /* tapping the scrim (to the right of the drawer) folds it */
+  await page.locator('#chatSidebarBackdrop').click({ position: { x: 600, y: 300 } });
   await expect(page.locator('#chatSidebar')).not.toHaveClass(/open/);
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 });
@@ -315,15 +332,26 @@ test('mobile: the sidebar is a drawer on top with a grey backdrop that folds on 
   await expect(backdrop).not.toHaveClass(/open/);
 });
 
-test('desktop: the sidebar slides over (no backdrop rendered) and pushes the thread', async ({ page }) => {
+test('the sidebar is a full-height overlay drawer on top at every width (with a scrim)', async ({ page }) => {
   await mockChat(page);
   await page.goto('/');
   await enterChat(page);
   await page.locator('#chatSidebarToggle').click();
   await expect(page.locator('#chatSidebar')).toHaveClass(/open/);
-  /* the backdrop stays display:none on widths above the breakpoint */
-  const disp = await page.locator('#chatSidebarBackdrop').evaluate((el) => getComputedStyle(el).display);
-  expect(disp).toBe('none');
+
+  const info = await page.evaluate(() => {
+    const sb = getComputedStyle(document.getElementById('chatSidebar'));
+    const bd = getComputedStyle(document.getElementById('chatSidebarBackdrop'));
+    const rect = document.getElementById('chatSidebar').getBoundingClientRect();
+    return { pos: sb.position, sbZ: sb.zIndex, bdDisplay: bd.display, bdZ: bd.zIndex,
+             bottom: Math.round(rect.bottom), vh: window.innerHeight };
+  });
+  /* fixed full-height drawer on the top layer; scrim displayed just under it */
+  expect(info.pos).toBe('fixed');
+  expect(Number(info.sbZ)).toBeGreaterThan(Number(info.bdZ));
+  expect(info.bdDisplay).toBe('block');
+  /* the drawer reaches the bottom of the viewport (covers the typing bar) */
+  expect(info.bottom).toBe(info.vh);
 });
 
 /* ---------- loading a past conversation ---------- */
@@ -387,4 +415,111 @@ test('inline code keeps readable (ink) text on its chip, not white-on-white', as
   });
   /* text colour must differ from its own chip background (the old white-on-white bug) */
   expect(colors.color).not.toBe(colors.bg);
+});
+
+/* ---------- sidebar item three-dots menu ---------- */
+
+test('three-dots menu is hover-revealed and opens a dropdown', async ({ page }) => {
+  await mockChat(page, { sessions: [{ id: 's1', title: 'Thread', updated_at: Date.now() }] });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+
+  const item = page.locator('.chat-session-item').first();
+  const menuBtn = item.locator('.chat-item-menu');
+  /* on a mouse device the button is hidden until the row is hovered */
+  await expect(menuBtn).toHaveCSS('opacity', '0');
+  await item.hover();
+  await expect(menuBtn).toHaveCSS('opacity', '1');
+  await menuBtn.click();
+  await expect(page.locator('.chat-item-dropdown.open')).toBeVisible();
+  /* three actions present */
+  await expect(page.locator('.chat-item-dropdown.open .chat-item-menu-action')).toHaveCount(3);
+});
+
+test('three-dots menu renames a thread (PATCH echoes the typed title)', async ({ page }) => {
+  await mockChat(page, { sessions: [{ id: 's1', title: 'Old title', updated_at: Date.now() }] });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+
+  const item = page.locator('.chat-session-item').first();
+  await item.hover();
+  await item.locator('.chat-item-menu').click();
+  page.once('dialog', (d) => d.accept('Renamed manually'));
+  await page.locator('.chat-item-menu-action').filter({ hasText: 'Renombrar' }).click();
+
+  await expect(page.locator('.chat-session-item').first()).toHaveText('Renamed manually', { useInnerText: true });
+});
+
+test('three-dots menu deletes a thread after confirm (DELETE)', async ({ page }) => {
+  await mockChat(page, { sessions: [{ id: 's1', title: 'Delete me', updated_at: Date.now() }] });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+
+  const item = page.locator('.chat-session-item').first();
+  await item.hover();
+  await item.locator('.chat-item-menu').click();
+  page.once('dialog', (d) => d.accept());
+  await page.locator('.chat-item-menu-action').filter({ hasText: 'Eliminar' }).click();
+
+  await expect(page.locator('.chat-session-item')).toHaveCount(0);
+  await expect(page.locator('.chat-session-empty')).toHaveText('Aún no hay sesiones.');
+});
+
+test('three-dots menu regenerates a title (POST)', async ({ page }) => {
+  await mockChat(page, { sessions: [{ id: 's1', title: 'Old title', updated_at: Date.now() }], generatedTitle: 'AI concise title' });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+
+  const item = page.locator('.chat-session-item').first();
+  await item.hover();
+  await item.locator('.chat-item-menu').click();
+  await page.locator('.chat-item-menu-action').filter({ hasText: 'Regenerar título' }).click();
+
+  await expect(page.locator('.chat-session-item').first()).toHaveText('AI concise title', { useInnerText: true });
+});
+
+/* ---------- markdown images + TeX ---------- */
+
+test('markdown image links render as <img> with a safe src and alt', async ({ page }) => {
+  const messages = {
+    s1: [{ id: 'm1', role: 'assistant',
+           content: 'A diagram:\n\n![architecture](https://example.com/a.png)',
+           created_at: Date.now() }]
+  };
+  await mockChat(page, { sessions: [{ id: 's1', title: 'T', updated_at: Date.now() }], messages });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await page.locator('.chat-session-item').first().click();
+
+  await expect(page.locator('#chatMessages img')).toHaveCount(1);
+  await expect(page.locator('#chatMessages img')).toHaveAttribute('src', 'https://example.com/a.png');
+  await expect(page.locator('#chatMessages img')).toHaveAttribute('alt', 'architecture');
+});
+
+test('TeX auto-render is wired up (renderMathInElement invoked on the thread)', async ({ page }) => {
+  /* stub KaTeX and block the CDN so the test is deterministic (no network) */
+  await page.addInitScript(() => {
+    window.__mathRuns = 0;
+    window.renderMathInElement = function () { window.__mathRuns++; };
+  });
+  await page.route('**/katex*', (r) => r.abort());
+  await page.route('**/auto-render*', (r) => r.abort());
+  await mockChat(page, { sessions: [{ id: 's1', title: 'T', updated_at: Date.now() }],
+    messages: { s1: [{ id: 'm1', role: 'assistant', content: 'Solve $x^2 + 1$', created_at: Date.now() }] } });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await page.locator('.chat-session-item').first().click();
+
+  /* the auto-render helper ran against the thread when the message appeared */
+  await expect(page.locator('#chatMessages .chat-msg.assistant')).toHaveCount(1);
+  const runs = await page.evaluate(() => window.__mathRuns);
+  expect(runs).toBeGreaterThan(0);
+  /* without KaTeX the raw delimiters are left readable, never blank/wiped */
+  await expect(page.locator('#chatMessages .chat-msg.assistant .msg-bubble')).toContainText('$x^2 + 1$');
 });

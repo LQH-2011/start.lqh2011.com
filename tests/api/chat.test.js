@@ -213,3 +213,105 @@ test('chat-messages: POST regenerate requires AI config + valid body', async () 
     if (prevKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = prevKey;
   }
 });
+
+/* ================= chat-sessions: PATCH rename + POST regenerate-title ================= */
+
+test('chat-sessions: PATCH rename validates id/title and gates to 500 on DB error', async () => {
+  const noAuth = makeRes();
+  await chatSessionsHandler(makeReq({ method: 'PATCH', body: { id: 'abc-123', title: 'X' } }), noAuth);
+  assert.equal(noAuth.statusCode, 401);
+
+  const badId = makeRes();
+  await chatSessionsHandler(makeReq({ method: 'PATCH', headers: AUTH, body: { id: ';rm', title: 'X' } }), badId);
+  assert.equal(badId.statusCode, 400);
+  assert.equal(badId.body.error, 'bad_id');
+
+  const emptyTitle = makeRes();
+  await chatSessionsHandler(makeReq({ method: 'PATCH', headers: AUTH, body: { id: 'abc-123', title: '   ' } }), emptyTitle);
+  assert.equal(emptyTitle.statusCode, 400);
+  assert.equal(emptyTitle.body.error, 'bad_title');
+
+  const longTitle = makeRes();
+  await chatSessionsHandler(makeReq({ method: 'PATCH', headers: AUTH, body: { id: 'abc-123', title: 'x'.repeat(101) } }), longTitle);
+  assert.equal(longTitle.statusCode, 400);
+
+  /* valid id + title -> DB unreachable -> 500 db_error */
+  const dbErr = makeRes();
+  await chatSessionsHandler(makeReq({ method: 'PATCH', headers: AUTH, body: { id: 'abc-123', title: 'New title' } }), dbErr);
+  assert.equal(dbErr.statusCode, 500);
+  assert.equal(dbErr.body.error, 'db_error');
+});
+
+test('chat-sessions: POST regenerate-title validates action/id and gates on AI config + DB', async () => {
+  const noAuth = makeRes();
+  await chatSessionsHandler(makeReq({ method: 'POST', body: { action: 'regenerate-title', id: 'abc-123' } }), noAuth);
+  assert.equal(noAuth.statusCode, 401);
+
+  const badAction = makeRes();
+  await chatSessionsHandler(makeReq({ method: 'POST', headers: AUTH, body: { action: 'nope', id: 'abc-123' } }), badAction);
+  assert.equal(badAction.statusCode, 400);
+  assert.equal(badAction.body.error, 'bad_action');
+
+  const badId = makeRes();
+  await chatSessionsHandler(makeReq({ method: 'POST', headers: AUTH, body: { action: 'regenerate-title', id: 'bad id' } }), badId);
+  assert.equal(badId.statusCode, 400);
+
+  /* AI not configured -> 500 before touching the DB */
+  const notCfg = makeRes();
+  await chatSessionsHandler(makeReq({ method: 'POST', headers: AUTH, body: { action: 'regenerate-title', id: 'abc-123' } }), notCfg);
+  assert.equal(notCfg.statusCode, 500);
+  assert.equal(notCfg.body.error, 'ai_not_configured');
+
+  /* AI configured -> reads messages -> DB unreachable -> 500 db_error */
+  const prevBase = process.env.AI_BASE_URL, prevModel = process.env.AI_MODEL, prevKey = process.env.AI_API_KEY;
+  process.env.AI_BASE_URL = 'https://api.example.com/v1';
+  process.env.AI_MODEL = 'test-model';
+  process.env.AI_API_KEY = 'test-key';
+  try {
+    const dbErr = makeRes();
+    await chatSessionsHandler(makeReq({ method: 'POST', headers: AUTH, body: { action: 'regenerate-title', id: 'abc-123' } }), dbErr);
+    assert.equal(dbErr.statusCode, 500);
+    assert.equal(dbErr.body.error, 'db_error');
+  } finally {
+    if (prevBase === undefined) delete process.env.AI_BASE_URL; else process.env.AI_BASE_URL = prevBase;
+    if (prevModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = prevModel;
+    if (prevKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = prevKey;
+  }
+});
+
+/* ================= generateTitle (api/_chat.js) ================= */
+
+test('generateTitle: calls the provider non-streaming and cleans the title', async () => {
+  process.env.AI_BASE_URL = 'https://api.example.com/v1';
+  process.env.AI_MODEL = 'test-model';
+  process.env.AI_API_KEY = 'test-key';
+  const origFetch = global.fetch;
+  try {
+    global.fetch = async (url, opts) => {
+      assert.equal(url, 'https://api.example.com/v1/chat/completions');
+      assert.equal(opts.body.includes('"stream":false'), true);
+      return { ok: true, json: async () => ({ choices: [{ message: { content: '  "How to bake bread"  ' } }] }) };
+    };
+    const t = await chat.generateTitle([{ role: 'user', content: 'How to bake bread?' }]);
+    assert.equal(t, 'How to bake bread');
+  } finally {
+    global.fetch = origFetch;
+    delete process.env.AI_BASE_URL; delete process.env.AI_MODEL; delete process.env.AI_API_KEY;
+  }
+});
+
+test('generateTitle: returns "" on empty content and rejects on provider failure', async () => {
+  process.env.AI_BASE_URL = 'https://api.example.com/v1';
+  process.env.AI_MODEL = 'test-model';
+  process.env.AI_API_KEY = 'test-key';
+  const origFetch = global.fetch;
+  try {
+    global.fetch = async () => { throw new Error('network'); };
+    await assert.rejects(chat.generateTitle([{ role: 'user', content: 'hi' }]));
+    global.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '   ' } }] }) });
+    assert.equal(await chat.generateTitle([{ role: 'user', content: 'hi' }]), '');
+  } finally {
+    global.fetch = origFetch;
+    delete process.env.AI_BASE_URL; delete process.env.AI_MODEL; delete process.env.AI_API_KEY;
+  }
+});

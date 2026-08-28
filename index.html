@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Inicio — LQH-2011</title>
 <link rel="icon" type="image/jpeg" href="https://blog.lqh2011.com/assets/img/favicon.jpg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -290,8 +293,8 @@
      offset, so an open sidebar never hides the conversation behind it. */
   :root {
     --chat-sidebar-w: min(280px, 82vw);
-    /* Opaque grey scrim behind the mobile chat sidebar drawer. */
-    --chat-overlay: rgba(54, 54, 54, .92);
+    /* Opaque grey scrim behind the chat sidebar drawer (always on top). */
+    --chat-overlay: rgb(54, 54, 54);
   }
   /* Body/`main` swap to a full-height column: logo collapses, the search bar
      docks to the bottom, and the chat view (sidebar + messages) fills the
@@ -414,17 +417,18 @@
   .icon-btn:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
   .icon-btn svg { pointer-events: none; }
 
-  /* The sliding session panel. Off-screen by default (translateX(-100%)),
-     slides into view; a gray border line separates it from the page. */
+  /* The sliding session panel — a full-viewport-height FIXED drawer on the TOP
+     layer (z 30), so it always covers the messages and the typing bar. It slides
+     in from the left; an opaque grey scrim sits just under it (z 29). */
   #chatSidebar {
-    position: absolute;
+    position: fixed;
     top: 0;
     left: 0;
     bottom: 0;
     width: var(--chat-sidebar-w);
     background: var(--bg);
     border-right: 1px solid var(--line);
-    z-index: 2;
+    z-index: 30;
     transform: translateX(-100%);
     transition: transform .25s ease;
     overflow-y: auto;
@@ -434,11 +438,6 @@
   #chatSidebar.open {
     transform: translateX(0);
     box-shadow: 0 0 14px rgba(0, 0, 0, .06);
-  }
-  /* when the sidebar is open, push the conversation right so it is never
-     hidden under the panel (the sidebar overlays on the same layer) */
-  #chatSidebar.open ~ #chatMessages {
-    margin-left: var(--chat-sidebar-w);
   }
   .chat-sidebar-header {
     padding: 4px 16px 10px;
@@ -455,16 +454,77 @@
     color: var(--faint);
   }
   .chat-session-item {
-    padding: 8px 16px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 8px 8px 16px;
     cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     color: var(--ink);
     transition: background-color .15s ease;
   }
   .chat-session-item:hover { background: var(--line); }
   .chat-session-item.active { background: var(--line); }
+  .chat-session-title {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* three-dots menu button: hidden until hover (always visible on touch) */
+  .chat-item-menu {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 5px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .15s ease, background-color .15s ease, color .15s ease;
+  }
+  .chat-session-item:hover .chat-item-menu,
+  .chat-session-item:focus-within .chat-item-menu,
+  .chat-item-menu.open { opacity: 1; }
+  .chat-item-menu:hover { background: var(--bg); color: var(--ink); }
+  .chat-item-menu svg { pointer-events: none; }
+  @media (hover: none) { .chat-item-menu { opacity: 1; } }
+  /* the per-item action dropdown */
+  .chat-item-dropdown {
+    position: absolute;
+    top: calc(100% - 2px);
+    right: 8px;
+    z-index: 5;
+    min-width: 168px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
+    padding: 4px;
+    display: none;
+  }
+  .chat-item-dropdown.open { display: block; }
+  .chat-item-menu-action {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font-size: 13px;
+    text-align: left;
+    padding: 7px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .chat-item-menu-action:hover { background: var(--line); }
+  .chat-item-menu-action.danger { color: #b00020; }
+  .chat-item-menu-action.danger:hover { background: rgba(176, 0, 32, .08); }
   .chat-session-empty {
     padding: 8px 16px;
     color: var(--faint);
@@ -544,6 +604,15 @@
   }
   .chat-msg .msg-bubble pre code { background: transparent; color: inherit; padding: 0; }
   .chat-msg .msg-bubble a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+  .chat-msg .msg-bubble img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    display: block;
+    margin: .5em auto;
+  }
+  /* KaTeX block math can overflow on narrow screens — scroll instead of blowing the bubble */
+  .chat-msg .msg-bubble .katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
   .chat-msg .msg-bubble table {
     border-collapse: collapse;
     margin: .5em 0;
@@ -637,11 +706,12 @@
     from { transform: rotate(0); }
     to { transform: rotate(360deg); }
   }
-  /* Mobile drawer: on a narrow viewport the sidebar is a full-viewport-height
-     panel on the TOP layer (z 30) and an opaque grey scrim covers the whole
-     main interface (messages + typing bar, z 29) so nothing shows behind it.
-     Tapping the scrim folds the sidebar. Desktop keeps the push-right layout
-     with NO scrim; the backdrop element is only displayed under the breakpoint. */
+  /* Sidebar drawer scrim: a fixed, opaque grey layer (z 29) that covers the
+     whole main interface (messages + typing bar) whenever the drawer is open,
+     so nothing shows behind it. The drawer itself is z 30 (on top). It is
+     always in the DOM and only fades in/out via `.open`; tapping it folds the
+     sidebar. (There is no separate desktop "push-right" mode anymore — the
+     sidebar is an overlay at every viewport size.) */
   .chat-sidebar-backdrop {
     position: fixed;
     inset: 0;
@@ -650,15 +720,9 @@
     opacity: 0;
     pointer-events: none;
     transition: opacity .25s ease;
-    display: none;   /* desktop: never rendered; the media query turns it on */
+    display: block;
   }
   .chat-sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
-  @media (max-width: 640px) {
-    .chat-sidebar-backdrop { display: block; }
-    #chatSidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 30; }
-    /* the drawer overlays the messages + typing bar; don't push the thread right */
-    #chatSidebar.open ~ #chatMessages { margin-left: 0; }
-  }
 </style>
 </head>
 <body>
@@ -2432,6 +2496,13 @@
       codes.push(c);
       return '\u0000' + (codes.length - 1) + '\u0000';
     });
+    /* images first (so a `![...]` isn't taken by the link rule). The `alt` and
+       `url` are already HTML-escaped; only http(s) is allowed so the AI can
+       never point `<img src>` at a javascript: scheme. */
+    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (whole, alt, url) {
+      if (!isSafeLink(url) || !/^https?:\/\//.test(url)) return whole;
+      return '<img src="' + url + '" alt="' + alt + '">';
+    });
     s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (whole, text, url) {
       if (!isSafeLink(url)) return whole;
       /* `url` is already HTML-escaped by the escapeHtml above — do not re-escape */
@@ -2693,20 +2764,146 @@
       lab.textContent = g.label;
       chatSessionList.appendChild(lab);
       g.items.forEach(function (s) {
-        var item = document.createElement('div');
-        item.className = 'chat-session-item' + (s.id === chatSessionId ? ' active' : '');
-        item.setAttribute('role', 'listitem');
-        item.setAttribute('tabindex', '0');
-        item.textContent = s.title || s.last_message || 'Sesión';
-        item.title = s.title || '';
-        item.addEventListener('mousedown', function (ev) { ev.preventDefault(); openChatSession(s.id); });
-        /* keyboard access: Enter / Space opens the session */
-        item.addEventListener('keydown', function (ev) {
-          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openChatSession(s.id); }
-        });
-        chatSessionList.appendChild(item);
+        chatSessionList.appendChild(buildSessionItem(s));
       });
     });
+  }
+  /* One session row: the title + a three-dots menu button (hover desktop,
+     always visible on touch) that opens a small dropdown with rename,
+     regenerate-title and delete. */
+  function buildSessionItem(s) {
+    var item = document.createElement('div');
+    item.className = 'chat-session-item' + (s.id === chatSessionId ? ' active' : '');
+    item.setAttribute('role', 'listitem');
+    item.setAttribute('tabindex', '0');
+    var title = s.title || s.last_message || 'Sesión';
+    item.title = title;
+
+    var label = document.createElement('span');
+    label.className = 'chat-session-title';
+    label.textContent = title;
+    item.appendChild(label);
+
+    var menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.className = 'chat-item-menu';
+    menuBtn.setAttribute('aria-label', 'Opciones de la conversación');
+    menuBtn.setAttribute('aria-haspopup', 'menu');
+    menuBtn.setAttribute('tabindex', '-1');
+    menuBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+      '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+
+    var menu = document.createElement('div');
+    menu.className = 'chat-item-dropdown';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-hidden', 'true');
+    menu.appendChild(sessionMenuAction('Renombrar', function () { closeSessionMenu(); renameSession(s); }));
+    menu.appendChild(sessionMenuAction('Regenerar título', function () { closeSessionMenu(); regenerateSessionTitle(s); }));
+    menu.appendChild(sessionMenuAction('Eliminar', function () { closeSessionMenu(); deleteSession(s); }, true));
+
+    item.appendChild(menuBtn);
+    item.appendChild(menu);
+
+    /* opening a session; the menu button stops propagation so it doesn't open */
+    item.addEventListener('mousedown', function (ev) { ev.preventDefault(); openChatSession(s.id); });
+    item.addEventListener('keydown', function (ev) {
+      if ((ev.key === 'Enter' || ev.key === ' ') && ev.target === item) {
+        ev.preventDefault(); openChatSession(s.id);
+      }
+    });
+    menuBtn.addEventListener('mousedown', function (ev) { ev.stopPropagation(); });
+    menuBtn.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      toggleSessionMenu(item, menu, menuBtn);
+    });
+    menu.addEventListener('mousedown', function (ev) { ev.stopPropagation(); });
+    return item;
+  }
+  function sessionMenuAction(label, onClick, danger) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chat-item-menu-action' + (danger ? ' danger' : '');
+    b.setAttribute('role', 'menuitem');
+    b.textContent = label;
+    b.addEventListener('click', function (ev) { ev.stopPropagation(); onClick(); });
+    return b;
+  }
+  /* menu state: only one session dropdown open at a time; Escape / outside
+     click closes it. */
+  var openSessionMenu = null;
+  function closeSessionMenu() {
+    if (!openSessionMenu) return;
+    openSessionMenu.classList.remove('open');
+    openSessionMenu.setAttribute('aria-hidden', 'true');
+    openSessionMenu = null;
+  }
+  function toggleSessionMenu(item, menu, menuBtn) {
+    if (openSessionMenu === menu) { closeSessionMenu(); return; }
+    closeSessionMenu();
+    menu.classList.add('open');
+    menu.setAttribute('aria-hidden', 'false');
+    openSessionMenu = menu;
+  }
+  document.addEventListener('click', function (ev) {
+    if (!openSessionMenu) return;
+    if (ev.target.closest && ev.target.closest('.chat-item-dropdown, .chat-item-menu')) return;
+    closeSessionMenu();
+  });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeSessionMenu(); } });
+
+  function renameSession(s) {
+    var current = s.title || s.last_message || '';
+    var name = window.prompt('Nuevo título:', current);
+    if (name === null) return;
+    name = name.replace(/\s+/g, ' ').trim();
+    if (!name) return;
+    var access = window.__startChatAccess;
+    if (!access || !access.token()) { appendChatNotice('Sin conexión con la API.'); return; }
+    fetch(access.base + '/api/chat-sessions', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + access.token() },
+      body: JSON.stringify({ id: s.id, title: name })
+    }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { appendChatNotice('No se pudo renombrar la conversación.'); return; }
+        s.title = res.d.title || name;
+        renderChatSessionList();
+      }).catch(function () { appendChatNotice('No se pudo renombrar la conversación.'); });
+  }
+  function regenerateSessionTitle(s) {
+    var access = window.__startChatAccess;
+    if (!access || !access.token()) { appendChatNotice('Sin conexión con la API.'); return; }
+    fetch(access.base + '/api/chat-sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + access.token() },
+      body: JSON.stringify({ action: 'regenerate-title', id: s.id })
+    }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok || !res.d.ok) { appendChatNotice('No se pudo regenerar el título.'); return; }
+        s.title = res.d.title || s.title;
+        renderChatSessionList();
+      }).catch(function () { appendChatNotice('No se pudo regenerar el título.'); });
+  }
+  function deleteSession(s) {
+    if (!window.confirm('¿Eliminar esta conversación?')) return;
+    var access = window.__startChatAccess;
+    if (!access || !access.token()) { appendChatNotice('Sin conexión con la API.'); return; }
+    fetch(access.base + '/api/chat-sessions?id=' + encodeURIComponent(s.id), {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + access.token() }
+    }).then(function (r) {
+      if (!r.ok) { appendChatNotice('No se pudo eliminar la conversación.'); return; }
+      chatSessions = chatSessions.filter(function (x) { return x.id !== s.id; });
+      /* deleting the currently-open thread clears the conversation view */
+      if (s.id === chatSessionId) {
+        chatSessionId = null;
+        chatMessagesList = [];
+        chatLoading = false;
+        chatExitArmed = false;
+        renderChatMessages();
+      }
+      renderChatSessionList();
+    }).catch(function () { appendChatNotice('No se pudo eliminar la conversación.'); });
   }
   function openChatSession(id) {
     if (!id) return;
@@ -2766,6 +2963,24 @@
       return;
     }
     chatMessagesList.forEach(function (m) { chatMessages.appendChild(buildMessageEl(m)); });
+    renderChatMath();
+  }
+  /* Render inline/display TeX in the just-built thread. Requires the KaTeX
+     auto-render function (loaded lazily from a CDN); when it's missing (offline
+     / blocked CDN) the raw `$...$` text is left as-is, so nothing breaks. */
+  function renderChatMath() {
+    if (!window.renderMathInElement) return;
+    try {
+      window.renderMathInElement(chatMessages, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: '\\[', right: '\\]', display: true },
+          { left: '\\(', right: '\\)', display: false },
+          { left: '$', right: '$', display: false }
+        ],
+        throwOnError: false
+      });
+    } catch (e) { /* malformed math never breaks the thread */ }
   }
   function buildMessageEl(m) {
     var wrap = document.createElement('div');
@@ -2862,6 +3077,10 @@
     }
     chatBusy = true;
     updateChatSendState();
+    /* a new thread: the DB starts with the derived title, then the backend
+       fires an AI title call in the background — so re-fetch the list a moment
+       later to pick it up. */
+    var wasNew = !chatSessionId;
     var userMsg = { id: 'local-' + Date.now(), role: 'user', content: text, created_at: Date.now(), streaming: false };
     chatMessagesList.push(userMsg);
     renderChatMessages();
@@ -2896,6 +3115,8 @@
           updateChatSendState();
           renderChatMessages();
           loadChatSessions();
+          /* re-fetch once the background AI title call has likely landed */
+          if (wasNew) { setTimeout(function () { loadChatSessions(); }, 3000); }
         } else if (obj.type === 'error') {
           var l2 = chatMessagesList[chatMessagesList.length - 1];
           if (l2 && l2.streaming) { chatMessagesList.pop(); }

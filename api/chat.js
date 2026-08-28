@@ -76,6 +76,19 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  /* ---------- enrich a new thread's title with the AI (fire-and-forget) ------
+     The session starts with the derived title; ask the model for a better one
+     and update the row in the background so the first reply is never delayed.
+     If the title call fails the derived title stays — a session is never blank. */
+  if (isNew) {
+    chat.generateTitle([{ role: 'user', content: message }])
+      .then(function (t) {
+        if (!t) return;
+        return lib.setChatSessionTitle(sessionId, t, Date.now()).catch(function () {});
+      })
+      .catch(function () {});
+  }
+
   /* ---------- build the conversation for the provider ---------- */
   var history = [];
   if (!isNew) {
