@@ -42,6 +42,55 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  if (req.method === 'PATCH') {
+    /* Rename a thread: { id, title }. The title is user-typed, so cap it and
+       allow empty? No — an empty title would blank the row; require 1..100. */
+    var body = req.body || {};
+    var rid = typeof body.id === 'string' ? body.id : '';
+    var rtitle = typeof body.title === 'string' ? body.title.replace(/\s+/g, ' ').trim() : '';
+    if (!chat.validId(rid)) { lib.send(res, 400, { error: 'bad_id' }, req); return; }
+    if (!rtitle || rtitle.length > 100) { lib.send(res, 400, { error: 'bad_title' }, req); return; }
+    try {
+      await lib.setChatSessionTitle(rid, rtitle, Date.now());
+      lib.send(res, 200, { ok: true, title: rtitle }, req);
+    } catch (e) {
+      console.error('rename chat session failed:', e);
+      lib.send(res, 500, { error: 'db_error' }, req);
+    }
+    return;
+  }
+
+  if (req.method === 'POST') {
+    /* Regenerate a thread title with the AI: { action: 'regenerate-title', id }.
+       Reads the thread's messages, asks the model for a short name, updates it. */
+    var pbody = req.body || {};
+    if (pbody.action !== 'regenerate-title') { lib.send(res, 400, { error: 'bad_action' }, req); return; }
+    var sid = typeof pbody.id === 'string' ? pbody.id : '';
+    if (!chat.validId(sid)) { lib.send(res, 400, { error: 'bad_id' }, req); return; }
+    if (!chat.aiConfigured()) { lib.send(res, 500, { error: 'ai_not_configured' }, req); return; }
+    var msgs;
+    try { msgs = await lib.getChatMessages(sid); } catch (e) {
+      console.error('regenerate-title read failed:', e);
+      lib.send(res, 500, { error: 'db_error' }, req);
+      return;
+    }
+    var newTitle;
+    try { newTitle = await chat.generateTitle(msgs); } catch (e) {
+      console.error('regenerate-title AI failed:', e);
+      lib.send(res, 502, { error: 'ai_error' }, req);
+      return;
+    }
+    if (!newTitle) { lib.send(res, 200, { ok: false, error: 'empty_title' }, req); return; }
+    try {
+      await lib.setChatSessionTitle(sid, newTitle, Date.now());
+      lib.send(res, 200, { ok: true, title: newTitle }, req);
+    } catch (e) {
+      console.error('regenerate-title write failed:', e);
+      lib.send(res, 500, { error: 'db_error' }, req);
+    }
+    return;
+  }
+
   lib.send(res, 405, { error: 'method_not_allowed' }, req);
 };
 
