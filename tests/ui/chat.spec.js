@@ -42,18 +42,28 @@ async function mockChat(page, opts) {
 
   await page.route('**/api/chat-sessions*', (r) => {
     const m = r.request().method();
-    /* rename (PATCH) echoes the title we were sent */
+    let body = {};
+    try { body = JSON.parse(r.request().postData() || '{}'); } catch (e) {}
+    /* rename (PATCH) echoes the title AND persists it into `sessions` */
     if (m === 'PATCH') {
-      let title = 'Renamed';
-      try { title = JSON.parse(r.request().postData()).title; } catch (e) {}
+      const title = body.title || 'Renamed';
+      const s = sessions.find((x) => x.id === body.id);
+      if (s) s.title = title;
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, title }) });
     }
-    /* regenerate title (POST) returns a canned title */
+    /* regenerate title (POST) returns a canned title and persists it */
     if (m === 'POST') {
-      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, title: o.generatedTitle || 'AI title' }) });
+      const title = o.generatedTitle || 'AI title';
+      const s = sessions.find((x) => x.id === body.id);
+      if (s) s.title = title;
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, title }) });
     }
-    /* delete (DELETE) */
+    /* delete (DELETE) removes it from `sessions` */
     if (m === 'DELETE') {
+      let id = null;
+      try { id = new URL(r.request().url()).searchParams.get('id'); } catch (e) {}
+      const idx = sessions.findIndex((x) => x.id === id);
+      if (idx !== -1) sessions.splice(idx, 1);
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     }
     /* GET list */
@@ -77,6 +87,17 @@ async function mockChat(page, opts) {
 
   await page.route('**/api/chat', (r) =>
     r.fulfill({ status: 200, contentType: 'application/x-ndjson', body: chatStream({ sessionId: 'sess-1' }) }));
+}
+
+/* A fresh GET of the session list from inside the page — used to verify the
+   mock persisted a mutation (a later fetch must not restore stale data). */
+async function freshSessions(page) {
+  return page.evaluate(async () => {
+    const r = await fetch('/api/chat-sessions', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('start.token') }
+    });
+    return (await r.json()).sessions;
+  });
 }
 
 test.beforeEach(async ({ context }) => {
@@ -449,6 +470,9 @@ test('three-dots menu renames a thread (PATCH echoes the typed title)', async ({
   await page.locator('.chat-item-menu-action').filter({ hasText: 'Renombrar' }).click();
 
   await expect(page.locator('.chat-session-item').first()).toHaveText('Renamed manually', { useInnerText: true });
+  /* a later GET must still return the renamed title (not the stale original) */
+  const list = await freshSessions(page);
+  expect(list.find((s) => s.id === 's1').title).toBe('Renamed manually');
 });
 
 test('three-dots menu deletes a thread after confirm (DELETE)', async ({ page }) => {
@@ -465,6 +489,8 @@ test('three-dots menu deletes a thread after confirm (DELETE)', async ({ page })
 
   await expect(page.locator('.chat-session-item')).toHaveCount(0);
   await expect(page.locator('.chat-session-empty')).toHaveText('Aún no hay sesiones.');
+  /* a later GET must not resurrect the deleted thread */
+  expect(await freshSessions(page)).toHaveLength(0);
 });
 
 test('three-dots menu regenerates a title (POST)', async ({ page }) => {
@@ -479,6 +505,9 @@ test('three-dots menu regenerates a title (POST)', async ({ page }) => {
   await page.locator('.chat-item-menu-action').filter({ hasText: 'Regenerar título' }).click();
 
   await expect(page.locator('.chat-session-item').first()).toHaveText('AI concise title', { useInnerText: true });
+  /* a later GET must still return the regenerated title */
+  const list = await freshSessions(page);
+  expect(list.find((s) => s.id === 's1').title).toBe('AI concise title');
 });
 
 /* ---------- markdown images + TeX ---------- */
@@ -524,14 +553,9 @@ test('TeX auto-render is wired up (renderMathInElement invoked on the thread)', 
 });
 
 test('TeX retries and renders once a late-loading KaTeX helper appears', async ({ page }) => {
-  /* the helper is absent when the thread first renders, then appears ~600ms
-     later (simulating a slow CDN) — renderChatMath must retry and succeed */
-  await page.addInitScript(() => {
-    window.__mathRuns = 0;
-    setTimeout(function () {
-      window.renderMathInElement = function () { window.__mathRuns++; };
-    }, 600);
-  });
+  /* the helper stays absent until AFTER the thread renders (slow CDN), so this
+     can only pass through the retry path — not an immediate render */
+  await page.addInitScript(() => { window.__mathRuns = 0; /* no renderMathInElement yet */ });
   await page.route('**/katex*', (r) => r.abort());
   await page.route('**/auto-render*', (r) => r.abort());
   await mockChat(page, { sessions: [{ id: 's1', title: 'T', updated_at: Date.now() }],
@@ -542,6 +566,10 @@ test('TeX retries and renders once a late-loading KaTeX helper appears', async (
   await page.locator('.chat-session-item').first().click();
 
   await expect(page.locator('#chatMessages .chat-msg.assistant')).toHaveCount(1);
-  /* the retry loop picks up the helper when it lands */
-  await expect.poll(() => page.evaluate(() => window.__mathRuns), { timeout: 6000 }).toBeGreaterThan(0);
+  /* still absent after the first render — nothing rendered math yet */
+  expect(await page.evaluate(() => typeof window.renderMathInElement)).toBe('undefined');
+  expect(await page.evaluate(() => window.__mathRuns)).toBe(0);
+  /* now the helper lands; the bounded retry must pick it up */
+  await page.evaluate(() => { window.renderMathInElement = function () { window.__mathRuns++; }; });
+  await expect.poll(() => page.evaluate(() => window.__mathRuns), { timeout: 8000 }).toBeGreaterThan(0);
 });

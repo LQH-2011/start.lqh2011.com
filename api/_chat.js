@@ -48,6 +48,9 @@ async function generateTitle(messages) {
   text = text.slice(0, 3000);
   var prov = await fetch(providerUrl(), {
     method: 'POST',
+    /* bound the call so a stalled provider can't hang the request (regenerate)
+       or keep the function alive past its budget (background new-thread title) */
+    signal: AbortSignal.timeout(15000),
     headers: { 'Content-Type': 'application/json',
                'Authorization': 'Bearer ' + process.env.AI_API_KEY },
     body: JSON.stringify({

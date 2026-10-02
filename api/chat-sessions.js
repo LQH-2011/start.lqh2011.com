@@ -68,6 +68,13 @@ module.exports = async function handler(req, res) {
     var sid = typeof pbody.id === 'string' ? pbody.id : '';
     if (!chat.validId(sid)) { lib.send(res, 400, { error: 'bad_id' }, req); return; }
     if (!chat.aiConfigured()) { lib.send(res, 500, { error: 'ai_not_configured' }, req); return; }
+    var session;
+    try { session = await lib.getChatSession(sid); } catch (e) {
+      console.error('regenerate-title session read failed:', e);
+      lib.send(res, 500, { error: 'db_error' }, req);
+      return;
+    }
+    if (!session) { lib.send(res, 404, { error: 'session_not_found' }, req); return; }
     var msgs;
     try { msgs = await lib.getChatMessages(sid); } catch (e) {
       console.error('regenerate-title read failed:', e);
@@ -81,13 +88,18 @@ module.exports = async function handler(req, res) {
       return;
     }
     if (!newTitle) { lib.send(res, 200, { ok: false, error: 'empty_title' }, req); return; }
+    /* apply only if the title is unchanged since we read it — a rename that
+       landed while the model was working must win over the regenerated title */
+    var applied;
     try {
-      await lib.setChatSessionTitle(sid, newTitle, Date.now());
-      lib.send(res, 200, { ok: true, title: newTitle }, req);
+      applied = await lib.setChatSessionTitleIfCurrent(sid, newTitle, session.title, Date.now());
     } catch (e) {
       console.error('regenerate-title write failed:', e);
       lib.send(res, 500, { error: 'db_error' }, req);
+      return;
     }
+    if (!applied) { lib.send(res, 200, { ok: false, error: 'title_changed' }, req); return; }
+    lib.send(res, 200, { ok: true, title: newTitle }, req);
     return;
   }
 
