@@ -150,6 +150,8 @@ test('chat-sessions: requires auth; DELETE validates id; DB unreachable -> 500',
   const pre = makeRes();
   await chatSessionsHandler(makeReq({ method: 'OPTIONS', headers: { origin: ORIGIN } }), pre);
   assert.equal(pre.statusCode, 204);
+  assert.ok(pre.headers['Access-Control-Allow-Methods'].includes('PATCH'),
+    'rename (PATCH) must survive CORS preflight');
 
   const badId = makeRes();
   await chatSessionsHandler(makeReq({ method: 'DELETE', headers: AUTH, url: '/api/chat-sessions?id=;rm' }), badId);

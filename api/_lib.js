@@ -40,7 +40,7 @@ function corsOrigin(req) {
 function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
     'Vary': 'Origin',
     'Cache-Control': 'no-store'
@@ -268,6 +268,16 @@ async function touchChatSession(id, now) {
 async function setChatSessionTitle(id, title, now) {
   await getPool().query('UPDATE chat_sessions SET title = $2, updated_at = $3 WHERE id = $1', [id, title, now]);
 }
+/* Set the title ONLY if it still equals `expectedTitle` (the value the caller
+   last wrote). Used by the background AI-title call: if the user renamed the
+   thread in the meantime, the row no longer matches and the manual title wins.
+   Returns the number of rows updated (0 = a rename beat us to it). */
+async function setChatSessionTitleIfCurrent(id, title, expectedTitle, now) {
+  var r = await getPool().query(
+    'UPDATE chat_sessions SET title = $2, updated_at = $4 WHERE id = $1 AND title = $3',
+    [id, title, expectedTitle, now]);
+  return r.rowCount || 0;
+}
 /* Delete a session (cascades to its messages). */
 async function deleteChatSession(id) {
   await getPool().query('DELETE FROM chat_sessions WHERE id = $1', [id]);
@@ -299,6 +309,7 @@ module.exports = {
   updateChatMessageContent: updateChatMessageContent,
   touchChatSession: touchChatSession,
   setChatSessionTitle: setChatSessionTitle,
+  setChatSessionTitleIfCurrent: setChatSessionTitleIfCurrent,
   deleteChatSession: deleteChatSession,
   deleteChatMessage: deleteChatMessage
 };

@@ -2720,8 +2720,8 @@
   }
   function loadChatSessions() {
     var access = window.__startChatAccess;
-    if (!access || !access.token()) { chatSessions = []; renderChatSessionList(); return; }
-    fetch(access.base + '/api/chat-sessions', {
+    if (!access || !access.token()) { chatSessions = []; renderChatSessionList(); return Promise.resolve(); }
+    return fetch(access.base + '/api/chat-sessions', {
       headers: { 'Authorization': 'Bearer ' + access.token() }
     }).then(function (r) {
       if (!r.ok) throw new Error('http_' + r.status);
@@ -2730,6 +2730,23 @@
       chatSessions = (data.sessions || []);
       renderChatSessionList();
     }).catch(function () { chatSessions = []; renderChatSessionList(); });
+  }
+  /* The backend names a new thread with the AI in the background shortly after
+     the first reply. Since we can't be pushed the result, revalidate a few
+     times and stop as soon as the session's title differs from the derived one
+     we saw in `meta` (bounded, so a slow/failed title call doesn't poll forever). */
+  function watchGeneratedTitle(sessionId, derivedTitle) {
+    if (!sessionId) return;
+    var tries = 0;
+    (function tick() {
+      if (tries++ >= 6) return;   /* ~ up to 12s of revalidation */
+      loadChatSessions().then(function () {
+        var s = null;
+        for (var i = 0; i < chatSessions.length; i++) { if (chatSessions[i].id === sessionId) { s = chatSessions[i]; break; } }
+        if (s && s.title && s.title !== derivedTitle) return;   /* AI title landed */
+        setTimeout(tick, 2000);
+      });
+    })();
   }
   function renderChatSessionList() {
     chatSessionList.textContent = '';
@@ -2789,7 +2806,6 @@
     menuBtn.className = 'chat-item-menu';
     menuBtn.setAttribute('aria-label', 'Opciones de la conversación');
     menuBtn.setAttribute('aria-haspopup', 'menu');
-    menuBtn.setAttribute('tabindex', '-1');
     menuBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
       '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
 
@@ -2966,21 +2982,33 @@
     renderChatMath();
   }
   /* Render inline/display TeX in the just-built thread. Requires the KaTeX
-     auto-render function (loaded lazily from a CDN); when it's missing (offline
-     / blocked CDN) the raw `$...$` text is left as-is, so nothing breaks. */
+     auto-render function (loaded lazily from a CDN via a deferred <script>).
+     If it isn't available yet the helper retries briefly, so a thread rendered
+     before the CDN finishes still gets its math once the script lands; when the
+     CDN never loads (offline / blocked) the raw `$...$` text is left readable. */
+  var mathRetryTimer = null;
+  var mathRetries = 0;
   function renderChatMath() {
-    if (!window.renderMathInElement) return;
-    try {
-      window.renderMathInElement(chatMessages, {
-        delimiters: [
-          { left: '$$', right: '$$', display: true },
-          { left: '\\[', right: '\\]', display: true },
-          { left: '\\(', right: '\\)', display: false },
-          { left: '$', right: '$', display: false }
-        ],
-        throwOnError: false
-      });
-    } catch (e) { /* malformed math never breaks the thread */ }
+    if (window.renderMathInElement) {
+      if (mathRetryTimer) { clearTimeout(mathRetryTimer); mathRetryTimer = null; }
+      mathRetries = 0;
+      try {
+        window.renderMathInElement(chatMessages, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '\\[', right: '\\]', display: true },
+            { left: '\\(', right: '\\)', display: false },
+            { left: '$', right: '$', display: false }
+          ],
+          throwOnError: false
+        });
+      } catch (e) { /* malformed math never breaks the thread */ }
+      return;
+    }
+    /* helper not loaded yet — retry a bounded number of times (~16s) */
+    if (mathRetries++ < 40 && !mathRetryTimer) {
+      mathRetryTimer = setTimeout(function () { mathRetryTimer = null; renderChatMath(); }, 400);
+    }
   }
   function buildMessageEl(m) {
     var wrap = document.createElement('div');
@@ -3078,9 +3106,9 @@
     chatBusy = true;
     updateChatSendState();
     /* a new thread: the DB starts with the derived title, then the backend
-       fires an AI title call in the background — so re-fetch the list a moment
-       later to pick it up. */
+       fires an AI title call in the background — revalidate until it lands. */
     var wasNew = !chatSessionId;
+    var derivedTitle = null;
     var userMsg = { id: 'local-' + Date.now(), role: 'user', content: text, created_at: Date.now(), streaming: false };
     chatMessagesList.push(userMsg);
     renderChatMessages();
@@ -3100,6 +3128,7 @@
       return consumeChatStream(reader, function (obj) {
         if (obj.type === 'meta') {
           chatSessionId = obj.sessionId;
+          derivedTitle = obj.title || null;
           if (obj.userMessageId) { userMsg.id = obj.userMessageId; }
           /* insert a placeholder assistant bubble that receives deltas */
           chatMessagesList.push({ id: obj.assistantMessageId, role: 'assistant', content: '', created_at: Date.now(), streaming: true });
@@ -3115,8 +3144,8 @@
           updateChatSendState();
           renderChatMessages();
           loadChatSessions();
-          /* re-fetch once the background AI title call has likely landed */
-          if (wasNew) { setTimeout(function () { loadChatSessions(); }, 3000); }
+          /* revalidate until the background AI title replaces the derived one */
+          if (wasNew && derivedTitle !== null) { watchGeneratedTitle(chatSessionId, derivedTitle); }
         } else if (obj.type === 'error') {
           var l2 = chatMessagesList[chatMessagesList.length - 1];
           if (l2 && l2.streaming) { chatMessagesList.pop(); }

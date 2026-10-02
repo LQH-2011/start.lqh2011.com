@@ -290,18 +290,17 @@ test('pressing / in chat hides the hamburger so only the ❯ exit indicator show
 /* ---------- typing-bar fixed width ---------- */
 
 test('the typing bar keeps a fixed max-width when the sidebar opens (no shrink/slide)', async ({ page }) => {
+  /* reduced-motion disables the CSS transitions, so the computed style is final
+     immediately — no fixed sleeps, no flakiness when the browser is throttled */
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await mockChat(page);
   await page.goto('/');
   await enterChat(page);
   const maxW = () => page.locator('form.search').evaluate((el) => getComputedStyle(el).maxWidth);
 
-  /* let the chat-entry max-width transition settle, then measure */
-  await page.waitForTimeout(450);
   const before = await maxW();
   await page.locator('#chatSidebarToggle').click();
   await expect(page.locator('#chatSidebar')).toHaveClass(/open/);
-  /* next assertion only after the sidebar-open transition settles */
-  await page.waitForTimeout(400);
   const after = await maxW();
   expect(after).toBe(before);
 });
@@ -522,4 +521,27 @@ test('TeX auto-render is wired up (renderMathInElement invoked on the thread)', 
   expect(runs).toBeGreaterThan(0);
   /* without KaTeX the raw delimiters are left readable, never blank/wiped */
   await expect(page.locator('#chatMessages .chat-msg.assistant .msg-bubble')).toContainText('$x^2 + 1$');
+});
+
+test('TeX retries and renders once a late-loading KaTeX helper appears', async ({ page }) => {
+  /* the helper is absent when the thread first renders, then appears ~600ms
+     later (simulating a slow CDN) — renderChatMath must retry and succeed */
+  await page.addInitScript(() => {
+    window.__mathRuns = 0;
+    setTimeout(function () {
+      window.renderMathInElement = function () { window.__mathRuns++; };
+    }, 600);
+  });
+  await page.route('**/katex*', (r) => r.abort());
+  await page.route('**/auto-render*', (r) => r.abort());
+  await mockChat(page, { sessions: [{ id: 's1', title: 'T', updated_at: Date.now() }],
+    messages: { s1: [{ id: 'm1', role: 'assistant', content: 'Solve $x^2$', created_at: Date.now() }] } });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await page.locator('.chat-session-item').first().click();
+
+  await expect(page.locator('#chatMessages .chat-msg.assistant')).toHaveCount(1);
+  /* the retry loop picks up the helper when it lands */
+  await expect.poll(() => page.evaluate(() => window.__mathRuns), { timeout: 6000 }).toBeGreaterThan(0);
 });

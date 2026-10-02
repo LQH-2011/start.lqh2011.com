@@ -79,12 +79,14 @@ module.exports = async function handler(req, res) {
   /* ---------- enrich a new thread's title with the AI (fire-and-forget) ------
      The session starts with the derived title; ask the model for a better one
      and update the row in the background so the first reply is never delayed.
-     If the title call fails the derived title stays — a session is never blank. */
+     The update is CONDITIONAL on the row still holding the derived title, so a
+     manual rename that happens meanwhile is never clobbered by the AI title. */
   if (isNew) {
+    var derivedTitle = title;
     chat.generateTitle([{ role: 'user', content: message }])
       .then(function (t) {
         if (!t) return;
-        return lib.setChatSessionTitle(sessionId, t, Date.now()).catch(function () {});
+        return lib.setChatSessionTitleIfCurrent(sessionId, t, derivedTitle, Date.now()).catch(function () {});
       })
       .catch(function () {});
   }
