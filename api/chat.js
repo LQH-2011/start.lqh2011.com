@@ -76,6 +76,23 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  /* ---------- enrich a new thread's title with the AI (in the background) ----
+     The session starts with the derived title; ask the model for a better one
+     and update the row concurrently with the reply, so the first reply is never
+     delayed. The update is CONDITIONAL on the row still holding the derived
+     title, so a manual rename is never clobbered. We await this promise before
+     `res.end()` below so a serverless freeze can't drop the write. */
+  var titleWork = null;
+  if (isNew) {
+    var derivedTitle = title;
+    titleWork = chat.generateTitle([{ role: 'user', content: message }])
+      .then(function (t) {
+        if (!t) return;
+        return lib.setChatSessionTitleIfCurrent(sessionId, t, derivedTitle, Date.now()).catch(function () {});
+      })
+      .catch(function () {});
+  }
+
   /* ---------- build the conversation for the provider ---------- */
   var history = [];
   if (!isNew) {
@@ -168,6 +185,9 @@ module.exports = async function handler(req, res) {
     /* provider returned no content (empty completion) — surface it, don't hang */
     res.write(chat.jsonLine({ type: 'error', error: 'ai_empty' }));
   }
+  /* let the background title write finish before we end the response — a
+     fire-and-forget promise after res.end() can be dropped on serverless */
+  if (titleWork) { try { await titleWork; } catch (e) {} }
   res.end();
 };
 

@@ -40,17 +40,45 @@ async function mockChat(page, opts) {
   await page.route('**/api/data', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: {} }) }));
 
-  await page.route('**/api/chat-sessions', (r) =>
-    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sessions }) }));
+  await page.route('**/api/chat-sessions*', (r) => {
+    const m = r.request().method();
+    let body = {};
+    try { body = JSON.parse(r.request().postData() || '{}'); } catch (e) {}
+    /* rename (PATCH) echoes the title AND persists it into `sessions` */
+    if (m === 'PATCH') {
+      const title = body.title || 'Renamed';
+      const s = sessions.find((x) => x.id === body.id);
+      if (s) s.title = title;
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, title }) });
+    }
+    /* regenerate title (POST) returns a canned title and persists it */
+    if (m === 'POST') {
+      const title = o.generatedTitle || 'AI title';
+      const s = sessions.find((x) => x.id === body.id);
+      if (s) s.title = title;
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, title }) });
+    }
+    /* delete (DELETE) removes it from `sessions` */
+    if (m === 'DELETE') {
+      let id = null;
+      try { id = new URL(r.request().url()).searchParams.get('id'); } catch (e) {}
+      const idx = sessions.findIndex((x) => x.id === id);
+      if (idx !== -1) sessions.splice(idx, 1);
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    }
+    /* GET list */
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sessions }) });
+  });
 
-  await page.route('**/api/chat-messages*', (r) => {
+  await page.route('**/api/chat-messages*', async (r) => {
     if (r.request().method() === 'DELETE') {
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     }
     if (r.request().method() === 'POST') {
       return r.fulfill({ status: 200, contentType: 'application/x-ndjson', body: chatStream({ sessionId: 'sess-1', deltas: ['Regenerated reply.'] }) });
     }
-    /* GET ?session=<id> */
+    /* GET ?session=<id> — optional delay so a loading spinner is observable */
+    if (o.messagesDelay) { await new Promise((res) => setTimeout(res, o.messagesDelay)); }
     const url = new URL(r.request().url());
     const sid = url.searchParams.get('session') || 'sess-1';
     return r.fulfill({ status: 200, contentType: 'application/json',
@@ -59,6 +87,17 @@ async function mockChat(page, opts) {
 
   await page.route('**/api/chat', (r) =>
     r.fulfill({ status: 200, contentType: 'application/x-ndjson', body: chatStream({ sessionId: 'sess-1' }) }));
+}
+
+/* A fresh GET of the session list from inside the page — used to verify the
+   mock persisted a mutation (a later fetch must not restore stale data). */
+async function freshSessions(page) {
+  return page.evaluate(async () => {
+    const r = await fetch('/api/chat-sessions', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('start.token') }
+    });
+    return (await r.json()).sessions;
+  });
 }
 
 test.beforeEach(async ({ context }) => {
@@ -141,10 +180,10 @@ test('sidebar toggle slides in and folds; session list is grouped by time', asyn
   await expect(page.locator('.chat-session-item')).toHaveCount(4);
   const labels = await page.locator('.chat-session-group').allTextContents();
   expect(labels).toEqual(['Hoy', 'Ayer', 'Esta semana', 'Anteriores']);
-  await expect(page.locator('.chat-session-item').first()).toHaveText('Today query');
+  await expect(page.locator('.chat-session-item').first()).toHaveText('Today query', { useInnerText: true });
 
-  /* clicking again folds it */
-  await toggle.click();
+  /* tapping the scrim (to the right of the drawer) folds it */
+  await page.locator('#chatSidebarBackdrop').click({ position: { x: 600, y: 300 } });
   await expect(page.locator('#chatSidebar')).not.toHaveClass(/open/);
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 });
@@ -250,4 +289,287 @@ test('deleting a message removes it from the thread (mocked DELETE)', async ({ p
   /* delete the user message (trash action) */
   await page.locator('#chatMessages .chat-msg.user .msg-action').nth(1).click();
   await expect(page.locator('#chatMessages .chat-msg.user')).toHaveCount(0);
+});
+
+/* ---------- indicator overlap on '/' ---------- */
+
+test('pressing / in chat hides the hamburger so only the ❯ exit indicator shows', async ({ page }) => {
+  await mockChat(page);
+  await page.goto('/');
+  await enterChat(page);
+
+  /* in chat mode the three-line hamburger is the left indicator */
+  await expect(page.locator('#chatIndicator')).toBeVisible();
+  await expect(page.locator('#cmdIndicator')).toBeHidden();
+
+  /* arming exit shows ❯ and must NOT leave the hamburger painted on top */
+  await typeInBar(page, '/');
+  await expect(page.locator('#chatIndicator')).toBeHidden();
+  await expect(page.locator('#cmdIndicator')).toBeVisible();
+});
+
+/* ---------- typing-bar fixed width ---------- */
+
+test('the typing bar keeps a fixed max-width when the sidebar opens (no shrink/slide)', async ({ page }) => {
+  /* reduced-motion disables the CSS transitions, so the computed style is final
+     immediately — no fixed sleeps, no flakiness when the browser is throttled */
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mockChat(page);
+  await page.goto('/');
+  await enterChat(page);
+  const maxW = () => page.locator('form.search').evaluate((el) => getComputedStyle(el).maxWidth);
+
+  const before = await maxW();
+  await page.locator('#chatSidebarToggle').click();
+  await expect(page.locator('#chatSidebar')).toHaveClass(/open/);
+  const after = await maxW();
+  expect(after).toBe(before);
+});
+
+/* ---------- mobile drawer + backdrop ---------- */
+
+test('mobile: the sidebar is a drawer on top with a grey backdrop that folds on tap', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockChat(page, { sessions: [{ id: 's1', title: 'Thread', updated_at: Date.now() }] });
+  await page.goto('/');
+  await enterChat(page);
+
+  /* on desktop the backdrop is never rendered; on mobile it appears opened */
+  const backdrop = page.locator('#chatSidebarBackdrop');
+  await expect(backdrop).not.toHaveClass(/open/);
+
+  await page.locator('#chatSidebarToggle').click();
+  await expect(page.locator('#chatSidebar')).toHaveClass(/open/);
+  await expect(backdrop).toHaveClass(/open/);
+  /* let the scrim's opacity transition finish, then assert it is opaque */
+  await page.waitForTimeout(350);
+  const op = await backdrop.evaluate((el) => getComputedStyle(el).opacity);
+  expect(op).toBe('1');
+
+  /* tapping the uncovered (right) area of the scrim folds the drawer */
+  await backdrop.click({ position: { x: 360, y: 400 } });
+  await expect(page.locator('#chatSidebar')).not.toHaveClass(/open/);
+  await expect(backdrop).not.toHaveClass(/open/);
+});
+
+test('the sidebar is a full-height overlay drawer on top at every width (with a scrim)', async ({ page }) => {
+  await mockChat(page);
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await expect(page.locator('#chatSidebar')).toHaveClass(/open/);
+
+  const info = await page.evaluate(() => {
+    const sb = getComputedStyle(document.getElementById('chatSidebar'));
+    const bd = getComputedStyle(document.getElementById('chatSidebarBackdrop'));
+    const rect = document.getElementById('chatSidebar').getBoundingClientRect();
+    return { pos: sb.position, sbZ: sb.zIndex, bdDisplay: bd.display, bdZ: bd.zIndex,
+             bottom: Math.round(rect.bottom), vh: window.innerHeight };
+  });
+  /* fixed full-height drawer on the top layer; scrim displayed just under it */
+  expect(info.pos).toBe('fixed');
+  expect(Number(info.sbZ)).toBeGreaterThan(Number(info.bdZ));
+  expect(info.bdDisplay).toBe('block');
+  /* the drawer reaches the bottom of the viewport (covers the typing bar) */
+  expect(info.bottom).toBe(info.vh);
+});
+
+/* ---------- loading a past conversation ---------- */
+
+test('loading a past session shows a spinner, not the "Think before you ask." welcome', async ({ page }) => {
+  await mockChat(page, {
+    sessions: [{ id: 's1', title: 'Load me', updated_at: Date.now() }],
+    messages: { s1: [{ id: 'm1', role: 'assistant', content: 'Loaded reply', created_at: Date.now() }] },
+    messagesDelay: 350
+  });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await page.locator('.chat-session-item').first().click();
+
+  /* while fetching: a spinner, and no new-thread welcome */
+  await expect(page.locator('#chatMessages .chat-loading .spinner')).toBeVisible();
+  await expect(page.locator('#chatMessages .chat-ascii')).toBeHidden();
+
+  /* once loaded the message renders and the spinner is gone */
+  await expect(page.locator('#chatMessages .chat-msg.assistant .msg-bubble')).toHaveText('Loaded reply');
+  await expect(page.locator('#chatMessages .chat-loading')).toBeHidden();
+});
+
+/* ---------- markdown tables + inline code ---------- */
+
+test('markdown tables render with a bordered table structure', async ({ page }) => {
+  const messages = {
+    s1: [{ id: 'm1', role: 'assistant',
+           content: '| Name | Age |\n|---|---|\n| Alice | 30 |\n| Bob | **25** |',
+           created_at: Date.now() }]
+  };
+  await mockChat(page, { sessions: [{ id: 's1', title: 'T', updated_at: Date.now() }], messages });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await page.locator('.chat-session-item').first().click();
+
+  await expect(page.locator('#chatMessages table')).toHaveCount(1);
+  await expect(page.locator('#chatMessages table th')).toHaveCount(2);
+  await expect(page.locator('#chatMessages table th').first()).toHaveText('Name');
+  /* two body rows, each with the header's column count */
+  await expect(page.locator('#chatMessages table tbody tr')).toHaveCount(2);
+  await expect(page.locator('#chatMessages table tbody td')).toHaveCount(4);
+  /* inline markdown works inside a cell */
+  await expect(page.locator('#chatMessages table tbody tr').first()).toContainText('Alice');
+});
+
+test('inline code keeps readable (ink) text on its chip, not white-on-white', async ({ page }) => {
+  await mockChat(page);
+  await page.goto('/');
+  await enterChat(page);
+  await typeInBar(page, 'Run `npm test` please');
+  await page.locator('#q').press('Enter');
+
+  const code = page.locator('#chatMessages .chat-msg.user .msg-bubble code');
+  await expect(code).toHaveText('npm test');
+  const colors = await code.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { color: cs.color, bg: cs.backgroundColor };
+  });
+  /* text colour must differ from its own chip background (the old white-on-white bug) */
+  expect(colors.color).not.toBe(colors.bg);
+});
+
+/* ---------- sidebar item three-dots menu ---------- */
+
+test('three-dots menu is hover-revealed and opens a dropdown', async ({ page }) => {
+  await mockChat(page, { sessions: [{ id: 's1', title: 'Thread', updated_at: Date.now() }] });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+
+  const item = page.locator('.chat-session-item').first();
+  const menuBtn = item.locator('.chat-item-menu');
+  /* on a mouse device the button is hidden until the row is hovered */
+  await expect(menuBtn).toHaveCSS('opacity', '0');
+  await item.hover();
+  await expect(menuBtn).toHaveCSS('opacity', '1');
+  await menuBtn.click();
+  await expect(page.locator('.chat-item-dropdown.open')).toBeVisible();
+  /* three actions present */
+  await expect(page.locator('.chat-item-dropdown.open .chat-item-menu-action')).toHaveCount(3);
+});
+
+test('three-dots menu renames a thread (PATCH echoes the typed title)', async ({ page }) => {
+  await mockChat(page, { sessions: [{ id: 's1', title: 'Old title', updated_at: Date.now() }] });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+
+  const item = page.locator('.chat-session-item').first();
+  await item.hover();
+  await item.locator('.chat-item-menu').click();
+  page.once('dialog', (d) => d.accept('Renamed manually'));
+  await page.locator('.chat-item-menu-action').filter({ hasText: 'Renombrar' }).click();
+
+  await expect(page.locator('.chat-session-item').first()).toHaveText('Renamed manually', { useInnerText: true });
+  /* a later GET must still return the renamed title (not the stale original) */
+  const list = await freshSessions(page);
+  expect(list.find((s) => s.id === 's1').title).toBe('Renamed manually');
+});
+
+test('three-dots menu deletes a thread after confirm (DELETE)', async ({ page }) => {
+  await mockChat(page, { sessions: [{ id: 's1', title: 'Delete me', updated_at: Date.now() }] });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+
+  const item = page.locator('.chat-session-item').first();
+  await item.hover();
+  await item.locator('.chat-item-menu').click();
+  page.once('dialog', (d) => d.accept());
+  await page.locator('.chat-item-menu-action').filter({ hasText: 'Eliminar' }).click();
+
+  await expect(page.locator('.chat-session-item')).toHaveCount(0);
+  await expect(page.locator('.chat-session-empty')).toHaveText('Aún no hay sesiones.');
+  /* a later GET must not resurrect the deleted thread */
+  expect(await freshSessions(page)).toHaveLength(0);
+});
+
+test('three-dots menu regenerates a title (POST)', async ({ page }) => {
+  await mockChat(page, { sessions: [{ id: 's1', title: 'Old title', updated_at: Date.now() }], generatedTitle: 'AI concise title' });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+
+  const item = page.locator('.chat-session-item').first();
+  await item.hover();
+  await item.locator('.chat-item-menu').click();
+  await page.locator('.chat-item-menu-action').filter({ hasText: 'Regenerar título' }).click();
+
+  await expect(page.locator('.chat-session-item').first()).toHaveText('AI concise title', { useInnerText: true });
+  /* a later GET must still return the regenerated title */
+  const list = await freshSessions(page);
+  expect(list.find((s) => s.id === 's1').title).toBe('AI concise title');
+});
+
+/* ---------- markdown images + TeX ---------- */
+
+test('markdown image links render as <img> with a safe src and alt', async ({ page }) => {
+  const messages = {
+    s1: [{ id: 'm1', role: 'assistant',
+           content: 'A diagram:\n\n![architecture](https://example.com/a.png)',
+           created_at: Date.now() }]
+  };
+  await mockChat(page, { sessions: [{ id: 's1', title: 'T', updated_at: Date.now() }], messages });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await page.locator('.chat-session-item').first().click();
+
+  await expect(page.locator('#chatMessages img')).toHaveCount(1);
+  await expect(page.locator('#chatMessages img')).toHaveAttribute('src', 'https://example.com/a.png');
+  await expect(page.locator('#chatMessages img')).toHaveAttribute('alt', 'architecture');
+});
+
+test('TeX auto-render is wired up (renderMathInElement invoked on the thread)', async ({ page }) => {
+  /* stub KaTeX and block the CDN so the test is deterministic (no network) */
+  await page.addInitScript(() => {
+    window.__mathRuns = 0;
+    window.renderMathInElement = function () { window.__mathRuns++; };
+  });
+  await page.route('**/katex*', (r) => r.abort());
+  await page.route('**/auto-render*', (r) => r.abort());
+  await mockChat(page, { sessions: [{ id: 's1', title: 'T', updated_at: Date.now() }],
+    messages: { s1: [{ id: 'm1', role: 'assistant', content: 'Solve $x^2 + 1$', created_at: Date.now() }] } });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await page.locator('.chat-session-item').first().click();
+
+  /* the auto-render helper ran against the thread when the message appeared */
+  await expect(page.locator('#chatMessages .chat-msg.assistant')).toHaveCount(1);
+  const runs = await page.evaluate(() => window.__mathRuns);
+  expect(runs).toBeGreaterThan(0);
+  /* without KaTeX the raw delimiters are left readable, never blank/wiped */
+  await expect(page.locator('#chatMessages .chat-msg.assistant .msg-bubble')).toContainText('$x^2 + 1$');
+});
+
+test('TeX retries and renders once a late-loading KaTeX helper appears', async ({ page }) => {
+  /* the helper stays absent until AFTER the thread renders (slow CDN), so this
+     can only pass through the retry path — not an immediate render */
+  await page.addInitScript(() => { window.__mathRuns = 0; /* no renderMathInElement yet */ });
+  await page.route('**/katex*', (r) => r.abort());
+  await page.route('**/auto-render*', (r) => r.abort());
+  await mockChat(page, { sessions: [{ id: 's1', title: 'T', updated_at: Date.now() }],
+    messages: { s1: [{ id: 'm1', role: 'assistant', content: 'Solve $x^2$', created_at: Date.now() }] } });
+  await page.goto('/');
+  await enterChat(page);
+  await page.locator('#chatSidebarToggle').click();
+  await page.locator('.chat-session-item').first().click();
+
+  await expect(page.locator('#chatMessages .chat-msg.assistant')).toHaveCount(1);
+  /* still absent after the first render — nothing rendered math yet */
+  expect(await page.evaluate(() => typeof window.renderMathInElement)).toBe('undefined');
+  expect(await page.evaluate(() => window.__mathRuns)).toBe(0);
+  /* now the helper lands; the bounded retry must pick it up */
+  await page.evaluate(() => { window.renderMathInElement = function () { window.__mathRuns++; }; });
+  await expect.poll(() => page.evaluate(() => window.__mathRuns), { timeout: 8000 }).toBeGreaterThan(0);
 });
