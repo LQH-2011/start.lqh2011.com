@@ -3,7 +3,7 @@
 # is the regression net that catches what CodeRabbit (static review) can't:
 # a broken inline script, a dead mode state machine, a history dropdown that
 # stopped opening, a timer that no longer starts. Runs on every PR and on
-# pushes to main (main is what GH Pages serves).
+# pushes to main (main deploys straight to production on Vercel).
 name: CI
 
 on:

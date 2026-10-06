@@ -1,5 +1,14 @@
 node_modules/
+
+# Env files hold real credentials (DATABASE_URL, AUTH_TOKEN_SECRET,
+# VERCEL_OIDC_TOKEN). The template stays tracked.
 .env
+.env.*
+!.env.example
+
+# Vercel CLI project link (org/project ids).
+.vercel/
+
 .hermes/
 *.log
 .DS_Store
