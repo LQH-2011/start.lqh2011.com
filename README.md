@@ -240,8 +240,12 @@ after that the device holds a token and behaves exactly as before.
   flashes the warning (plus a console line) when they differ by more than 5 minutes —
   fix the system clock on that device. Independently, the API clamps any timestamp more
   than 5 minutes in the future back to server time, which bounds the fast-clock case
-  server-side; a slow clock can only be reported, never corrected. (Local mode keeps its
-  own banner + permanent warning icon.)
+  server-side; a slow clock can only be reported, never corrected. The page then
+  **adopts the clamped timestamp locally**, so its timeline converges to server time
+  after one push — keeping the future stamp would make every later push re-send the
+  same value with a fresh clamp and keep winning. (Adoption is compare-and-set: if you
+  edited again while that push was in flight, the newer local stamp is kept.) (Local
+  mode keeps its own banner + permanent warning icon.)
 
 ## AI chat (`j` from command mode)
 

@@ -3728,6 +3728,24 @@
       return r.json().then(function (d) {
         var adjusted = d && d.adjusted;
         if (!adjusted) return;
+        /* Adopt the server's clamped stamp for each adjusted key. Leaving the
+           future stamp in start.sync.ts would keep THIS device winning: the
+           next pull would skip every newer server value (it.ts <= local ts),
+           and the next schedulePush would re-send the same value with a fresh
+           clamp, beating edits other devices made in the meantime. Only adopt
+           while the local stamp is still the one we sent (same compare-and-set
+           idea as setChatSessionTitleIfCurrent) — a newer local edit must keep
+           its own timestamp. */
+        var ts = readTs();
+        var adopted = false;
+        Object.keys(adjusted).forEach(function (k) {
+          var a = adjusted[k];
+          if (!a || typeof a.to !== 'number') return;
+          if (ts[k] !== a.from) return;
+          ts[k] = a.to;
+          adopted = true;
+        });
+        if (adopted) { writeTs(ts); }
         console.warn('start: the server pulled back future timestamps for ' +
                      Object.keys(adjusted).join(', ') +
                      ' — this device\'s clock is ahead. Check the system clock.');

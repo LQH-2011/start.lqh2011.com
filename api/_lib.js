@@ -240,8 +240,26 @@ async function getAll() {
    overwrites a newer one (protects against a stale offline device).
    Deletes are TOMBSTONES (NULL value) with the same LWW predicate — a
    physical DELETE would let a stale delete kill a newer value, and let a
-   stale value re-INSERT (no row to conflict with) after a newer delete. */
-async function upsertAll(items) {
+   stale value re-INSERT (no row to conflict with) after a newer delete.
+
+   Two refinements on top of pure LWW, both forced by the fact that timestamps
+   come from client clocks (see clampTs). Ordering is untouched by either — an
+   older stamp still loses, which is what protects a stale offline device:
+
+     * `<=` rather than `<`: sanitizeItems can clamp several writes onto the
+       SAME server millisecond, and with a strict `<` the second one is dropped
+       as a tie. Equal stamps mean equal logical write time, so let the later
+       request win.
+
+     * `kv.updated_at > $4`: a STORED stamp beyond server-now + tolerance is
+       corrupt by construction — clampTs never writes one, so this is legacy
+       data from before the clamp existed, or a client that predates it. Pure
+       LWW would let such a row block every later write until real time caught
+       up, silently (the request still reports success). A stamp in the future is
+       evidence of a broken clock, not of a newer edit, so a real write may
+       overwrite it and repair the row. */
+async function upsertAll(items, now) {
+  var futureLimit = (Number.isFinite(now) ? now : Date.now()) + FUTURE_TOLERANCE_MS;
   var client = await getPool().connect();
   try {
     await client.query('BEGIN');
@@ -251,8 +269,8 @@ async function upsertAll(items) {
       await client.query(
         'INSERT INTO kv (key, value, updated_at) VALUES ($1, $2, $3) ' +
         'ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at ' +
-        'WHERE kv.updated_at < EXCLUDED.updated_at',
-        [key, value, Number(it.ts)]
+        'WHERE kv.updated_at <= EXCLUDED.updated_at OR kv.updated_at > $4',
+        [key, value, Number(it.ts), futureLimit]
       );
     }
     await client.query('COMMIT');

@@ -35,10 +35,13 @@ module.exports = async function handler(req, res) {
     var body = req.body || {};
     /* Validation and the clock-skew clamp live in _lib.sanitizeItems, which is
        pure — so the api tests cover this path without a database. */
-    var clean = lib.sanitizeItems(body.items, Date.now());
+    /* One `now` for both the clamp and the write: the repair predicate in
+       upsertAll must judge "in the future" by the same clock that clamped. */
+    var now = Date.now();
+    var clean = lib.sanitizeItems(body.items, now);
     if (clean.error) { badRequest(res, clean.error, req); return; }
     try {
-      await lib.upsertAll(clean.items);
+      await lib.upsertAll(clean.items, now);
       var payload = { ok: true };
       /* Report keys whose timestamp had to be pulled back to server time: the
          client surfaces this so a skewed clock is visible instead of silently

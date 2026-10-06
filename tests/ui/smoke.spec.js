@@ -1400,6 +1400,64 @@ test('sync indicator: the server clamping a future timestamp warns too (push res
   await expect.poll(() => syncShown(page, '#syncIcon .sync-warn')).toBe(true);
 });
 
+test('sync indicator: an adjusted push adopts the server timestamp into start.sync.ts', async ({ page }) => {
+  const clamped = 1750000000000;
+  await page.route('**/api/data', async (route) => {
+    if (route.request().method() !== 'POST') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    }
+    const sent = JSON.parse(route.request().postData() || '{}').items || {};
+    if (!sent['start.mode']) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    }
+    /* the server reports it pulled this device's future stamp back to its clock */
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, adjusted: { 'start.mode': { from: sent['start.mode'].ts, to: clamped } } })
+    });
+  });
+  await page.goto('/');
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-ok')).toBe(true);
+
+  await page.evaluate(() => { window.__startSync.changed('start.mode', 'command'); });
+
+  /* the future stamp must be REPLACED by the clamped one: keeping it would make
+     every later push re-send the same value with a fresh clamp, so this device
+     would keep winning conflicts against edits made elsewhere in the meantime */
+  await expect.poll(() => page.evaluate(
+    () => JSON.parse(localStorage.getItem('start.sync.ts') || '{}')['start.mode']
+  )).toBe(clamped);
+});
+
+test('sync indicator: a newer local edit is not clobbered by a stale adjustment', async ({ page }) => {
+  /* the response's `from` no longer matches the local stamp — i.e. the user
+     edited again while the push was in flight, so the adjustment is stale and
+     must be ignored (compare-and-set) */
+  let sentTs = null;
+  await page.route('**/api/data', async (route) => {
+    if (route.request().method() !== 'POST') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    }
+    const sent = JSON.parse(route.request().postData() || '{}').items || {};
+    if (sent['start.mode']) { sentTs = sent['start.mode'].ts; }
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, adjusted: { 'start.mode': { from: (sentTs || 0) + 1, to: 1750000000000 } } })
+    });
+  });
+  await page.goto('/');
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-ok')).toBe(true);
+
+  await page.evaluate(() => { window.__startSync.changed('start.mode', 'command'); });
+  await expect.poll(() => sentTs).not.toBeNull();
+  await page.waitForTimeout(400);
+
+  const ts = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('start.sync.ts') || '{}')['start.mode']
+  );
+  expect(ts).toBe(sentTs);
+});
+
 /* ---------- local mode (no backend) ---------- */
 /* Logging in with the reserved password `local`/`test`/`debug` skips the API
    entirely: no token, no pull, no push, all data stays in localStorage. The
