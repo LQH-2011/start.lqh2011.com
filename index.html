@@ -3533,6 +3533,32 @@
     syncFlashTimer = setTimeout(function () { syncIcon.style.display = 'none'; }, 1200);
   }
 
+  /* ---------- clock skew ---------- */
+  /* The store resolves conflicts by last-write-wins on CLIENT timestamps (see
+     api/_lib.js upsertAll), which only works while every device roughly agrees
+     on the time. A device whose clock runs FAST stamps its writes in the future
+     and wins every conflict until real time catches up; a device running SLOW
+     loses every conflict and has its edits overwritten by the next pull.
+     Neither produces an error anywhere, so the sync indicator is the only place
+     the user would ever find out. The server's Date header is the one
+     trustworthy clock reachable from here: compare with it and flash the
+     warning. Keep in sync with FUTURE_TOLERANCE_MS in api/_lib.js, which
+     independently clamps future timestamps (that bounds the fast-clock case
+     server-side; a slow clock can only be reported). */
+  var CLOCK_SKEW_TOLERANCE_MS = 5 * 60 * 1000;
+  function clockIsSkewed(r) {
+    var header = r.headers && r.headers.get && r.headers.get('date');
+    if (!header) return false;
+    var serverNow = Date.parse(header);
+    if (!isFinite(serverNow)) return false;
+    var skew = Date.now() - serverNow;
+    if (Math.abs(skew) <= CLOCK_SKEW_TOLERANCE_MS) return false;
+    console.warn('start: this device\'s clock is off by ' + Math.round(skew / 1000) +
+                 's. Synced settings use last-write-wins, so edits made here may be ' +
+                 'overwritten or may never leave this device. Check the system clock.');
+    return true;
+  }
+
   /* ---------- overlay ---------- */
   function showOverlay(msg) {
     overlay.hidden = false;
@@ -3622,6 +3648,7 @@
       return r.json().then(function (data) {
         if (gen !== syncGen) return;   /* a newer pull superseded this one */
         var items = (data && data.items) || {};
+        var skewed = clockIsSkewed(r);
         var ts = readTs();
         var changed = false;
         SYNC_KEYS.forEach(function (k) {
@@ -3644,13 +3671,14 @@
           if (!manual && !interacted) {
             /* show the success tick, then apply the synced state via reload —
                otherwise the reload preempts the tick for this pull */
-            flashSyncResult('ok');
+            flashSyncResult(skewed ? 'warn' : 'ok');
             setTimeout(function () { location.reload(); }, 1200);
             return;
           }
         }
-        /* sync landed (and won't reload): flash the success tick */
-        flashSyncResult('ok');
+        /* sync landed (and won't reload): flash the success tick (a skewed
+           clock flashes the warning instead — a problem the user must fix) */
+        flashSyncResult(skewed ? 'warn' : 'ok');
         /* flush local changes that never made it out (tab closed before the
            debounce fired): pull with no merge = server is older, push now */
         schedulePush();
@@ -3691,7 +3719,38 @@
       body: JSON.stringify({ items: items }),
       keepalive: !!flush   /* let the request outlive the closing page */
     }).then(function (r) {
-      if (r.status === 401) { dropToken(); showOverlay(); }
+      if (r.status === 401) { dropToken(); showOverlay(); return; }
+      /* a pagehide flush has no page left to warn on */
+      if (flush || !r.ok) return;
+      /* the server clamps timestamps stamped in the future (a fast clock);
+         report it, since this device would otherwise win conflicts it should
+         lose — and would have been told nothing at all */
+      return r.json().then(function (d) {
+        var adjusted = d && d.adjusted;
+        if (!adjusted) return;
+        /* Adopt the server's clamped stamp for each adjusted key. Leaving the
+           future stamp in start.sync.ts would keep THIS device winning: the
+           next pull would skip every newer server value (it.ts <= local ts),
+           and the next schedulePush would re-send the same value with a fresh
+           clamp, beating edits other devices made in the meantime. Only adopt
+           while the local stamp is still the one we sent (same compare-and-set
+           idea as setChatSessionTitleIfCurrent) — a newer local edit must keep
+           its own timestamp. */
+        var ts = readTs();
+        var adopted = false;
+        Object.keys(adjusted).forEach(function (k) {
+          var a = adjusted[k];
+          if (!a || typeof a.to !== 'number') return;
+          if (ts[k] !== a.from) return;
+          ts[k] = a.to;
+          adopted = true;
+        });
+        if (adopted) { writeTs(ts); }
+        console.warn('start: the server pulled back future timestamps for ' +
+                     Object.keys(adjusted).join(', ') +
+                     ' — this device\'s clock is ahead. Check the system clock.');
+        flashSyncResult('warn');
+      }).catch(function () { /* body only carries the skew warning */ });
     }).catch(function () { /* offline: retried on next change/load */ });
   }
 
