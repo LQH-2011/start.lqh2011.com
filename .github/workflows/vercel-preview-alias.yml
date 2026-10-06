@@ -6,10 +6,11 @@
 #
 # Design (one run per PR event, never per deployment status):
 #   - Triggered by pull_request events (opened/synchronize/reopened), so
-#     production deploys and GH Pages deploys on main never create runs —
-#     the old `deployment_status` trigger produced a skipped run for every
-#     status event in the repo (queued/building/ready x Vercel + GH Pages),
-#     which flooded the Actions list with ~5 no-op runs per push to main.
+#     production deploys on main never create runs — the old
+#     `deployment_status` trigger produced a skipped run for every status
+#     event in the repo (queued/building/ready x Vercel, plus GH Pages back
+#     when it still deployed), which flooded the Actions list with ~5 no-op
+#     runs per push to main.
 #   - Polls the GitHub deployments API until the Vercel *preview* build for
 #     this PR's head commit is ready, then aliases. The `opened` event finds
 #     an already-built preview immediately, which replaces the old
