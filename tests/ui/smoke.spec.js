@@ -1346,6 +1346,60 @@ test('sync indicator: a newer pull supersedes an in-flight one (generation guard
   await expect.poll(() => syncShown(page, '#syncIcon')).toBe(false);
 });
 
+/* ---------- clock skew (last-write-wins is only as good as the clocks) ------ */
+/* The store resolves conflicts by last-write-wins on CLIENT timestamps, so a
+   device with a wrong clock silently misbehaves: fast = wins every conflict
+   until real time catches up, slow = loses every conflict to the next pull.
+   Neither raises an error, so the sync indicator is the only signal. The
+   server's Date header is the reference clock. */
+
+test('sync indicator: a skewed device clock warns instead of failing silently', async ({ page }) => {
+  /* server is two days behind this device => the device clock is two days fast */
+  const serverDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toUTCString();
+  await page.route('**/api/data', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    headers: { date: serverDate }, body: '{}'
+  }));
+  await page.goto('/');
+
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-warn')).toBe(true);
+});
+
+test('sync indicator: a correct clock still shows the success tick (no false warning)', async ({ page }) => {
+  /* a second of NTP skew is normal and must not trigger the warning */
+  const serverDate = new Date(Date.now() + 1000).toUTCString();
+  await page.route('**/api/data', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    headers: { date: serverDate }, body: '{}'
+  }));
+  await page.goto('/');
+
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-ok')).toBe(true);
+  expect(await syncShown(page, '#syncIcon .sync-warn')).toBe(false);
+});
+
+test('sync indicator: the server clamping a future timestamp warns too (push response)', async ({ page }) => {
+  /* the POST comes back with `adjusted`: the server pulled a future timestamp
+     back to its own clock, i.e. this device's clock is ahead */
+  await page.route('**/api/data', (route) => {
+    if (route.request().method() === 'POST') {
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ ok: true, adjusted: { 'start.mode': { from: 4102444800000, to: 1750000000000 } } })
+      });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await page.goto('/');
+
+  /* let the load pull finish (readyToPush), then make a synced change so the
+     debounced push fires */
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-ok')).toBe(true);
+  await page.evaluate(() => { window.__startSync.changed('start.mode', 'command'); });
+
+  await expect.poll(() => syncShown(page, '#syncIcon .sync-warn')).toBe(true);
+});
+
 /* ---------- local mode (no backend) ---------- */
 /* Logging in with the reserved password `local`/`test`/`debug` skips the API
    entirely: no token, no pull, no push, all data stays in localStorage. The

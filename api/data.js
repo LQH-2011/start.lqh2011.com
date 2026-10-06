@@ -1,13 +1,12 @@
 /* /api/data — read/write the sync KV store.
    GET  -> { items: { key: { v, ts } } }
    POST -> { items: { key: { v, ts } } }  (v null/undefined deletes the key)
+        <- { ok: true, adjusted?: { key: { from, to } } }  (adjusted only lists
+           keys whose future timestamp was clamped to server time — clampTs)
    Both require `Authorization: Bearer <token>` from /api/auth. */
 'use strict';
 
 var lib = require('./_lib');
-
-var MAX_KEYS = 64;
-var MAX_KEY_LEN = 128;
 
 function badRequest(res, msg, req) {
   lib.send(res, 400, { error: msg }, req);
@@ -34,26 +33,18 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'POST') {
     var body = req.body || {};
-    var raw = body.items;
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      badRequest(res, 'bad_items', req);
-      return;
-    }
-    var clean = {};
-    Object.keys(raw).forEach(function (k) {
-      if (k.length === 0 || k.length > MAX_KEY_LEN) return;
-      var it = raw[k];
-      if (!it || typeof it !== 'object' || Array.isArray(it)) return;
-      var ts = Number(it.ts);
-      if (!Number.isFinite(ts)) return;
-      clean[k] = { v: it.v === undefined ? null : it.v, ts: Math.floor(ts) };
-    });
-    var keys = Object.keys(clean);
-    if (keys.length === 0) { badRequest(res, 'bad_items', req); return; }
-    if (keys.length > MAX_KEYS) { badRequest(res, 'too_many_keys', req); return; }
+    /* Validation and the clock-skew clamp live in _lib.sanitizeItems, which is
+       pure — so the api tests cover this path without a database. */
+    var clean = lib.sanitizeItems(body.items, Date.now());
+    if (clean.error) { badRequest(res, clean.error, req); return; }
     try {
-      await lib.upsertAll(clean);
-      lib.send(res, 200, { ok: true }, req);
+      await lib.upsertAll(clean.items);
+      var payload = { ok: true };
+      /* Report keys whose timestamp had to be pulled back to server time: the
+         client surfaces this so a skewed clock is visible instead of silently
+         losing the conflicts (see index.html clockIsSkewed). */
+      if (Object.keys(clean.adjusted).length > 0) { payload.adjusted = clean.adjusted; }
+      lib.send(res, 200, payload, req);
     } catch (e) {
       console.error('db write failed:', e);
       lib.send(res, 500, { error: 'db_error' }, req);

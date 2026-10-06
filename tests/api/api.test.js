@@ -247,3 +247,69 @@ test('data: valid token + unreachable DB -> 500 db_error (gate passed)', async (
   assert.equal(res2.statusCode, 500);
   assert.equal(res2.body.error, 'db_error');
 });
+
+/* ================= clock skew (sanitizeItems / clampTs) ================= */
+/* The store resolves conflicts by last-write-wins on CLIENT timestamps, which
+   used to fail SILENTLY on a wrong clock: a device running fast stamped its
+   writes into the future and won every conflict until real time caught up, and
+   a device running slow lost every conflict to the next pull. sanitizeItems is
+   pure, so the whole guard is covered here without a database (the handler
+   itself can only reach the DB path, which returns 500). */
+
+const NOW = 1750000000000;   /* fixed reference — no flaky clock reads */
+
+test('sanitizeItems: malformed entries are dropped, valid siblings survive', () => {
+  assert.equal(lib.sanitizeItems(null, NOW).error, 'bad_items');
+  assert.equal(lib.sanitizeItems([], NOW).error, 'bad_items');
+  /* nothing usable left after filtering */
+  assert.equal(lib.sanitizeItems({ n: 7, a: [], b: { v: 'x' } }, NOW).error, 'bad_items');
+
+  const tooLong = 'k'.repeat(129);
+  const r = lib.sanitizeItems({
+    [tooLong]: { v: 'dropped', ts: NOW },
+    '': { v: 'dropped', ts: NOW },
+    nope: { v: 'dropped', ts: 'not-a-number' },
+    'start.theme': { v: 'dark', ts: NOW }
+  }, NOW);
+  assert.equal(r.error, null);
+  assert.deepEqual(Object.keys(r.items), ['start.theme']);
+  assert.equal(r.items['start.theme'].v, 'dark');
+});
+
+test('sanitizeItems: an undefined value becomes an explicit null tombstone', () => {
+  const r = lib.sanitizeItems({ k: { ts: NOW } }, NOW);
+  assert.equal(r.error, null);
+  assert.equal(r.items.k.v, null);
+});
+
+test('sanitizeItems: a future timestamp (fast clock) is clamped to server time and reported', () => {
+  const future = NOW + 2 * 24 * 60 * 60 * 1000;   /* clock two days ahead */
+  const r = lib.sanitizeItems({ 'start.theme': { v: 'dark', ts: future } }, NOW);
+  assert.equal(r.error, null);
+  assert.equal(r.items['start.theme'].ts, NOW, 'clamped to server time');
+  assert.equal(r.items['start.theme'].v, 'dark', 'the write itself still lands');
+  assert.deepEqual(r.adjusted, { 'start.theme': { from: future, to: NOW } });
+});
+
+test('sanitizeItems: normal skew passes through; a past timestamp is never clamped', () => {
+  const slightlyAhead = NOW + 60 * 1000;                  /* 1 min: NTP noise */
+  const offline = NOW - 3 * 24 * 60 * 60 * 1000;          /* edited 3 days ago */
+  const r = lib.sanitizeItems({ a: { v: '1', ts: slightlyAhead }, b: { v: '2', ts: offline } }, NOW);
+  assert.equal(r.items.a.ts, slightlyAhead, 'ordinary skew is left alone');
+  assert.equal(r.items.b.ts, offline, 'an offline edit must keep losing on its own merits');
+  assert.deepEqual(r.adjusted, {});
+});
+
+test('clampTs: the tolerance boundary is exclusive', () => {
+  const edge = NOW + lib.FUTURE_TOLERANCE_MS;
+  assert.equal(lib.clampTs(edge, NOW), edge, 'exactly at the limit is kept');
+  assert.equal(lib.clampTs(edge + 1, NOW), NOW, 'one ms past is clamped');
+  assert.equal(lib.clampTs(NOW, NOW), NOW);
+  assert.equal(lib.clampTs(NOW - 1, NOW), NOW - 1);
+});
+
+test('sanitizeItems: MAX_KEYS is still enforced after clamping', () => {
+  const many = {};
+  for (let i = 0; i < 65; i++) many['k' + i] = { v: 'x', ts: NOW + 10 * 24 * 60 * 60 * 1000 };
+  assert.equal(lib.sanitizeItems(many, NOW).error, 'too_many_keys');
+});

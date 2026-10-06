@@ -15,6 +15,13 @@ var TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000; /* 90 days */
 var AUTH_WINDOW_MS = 15 * 60 * 1000;
 var AUTH_MAX_ATTEMPTS = 10;
 
+/* Sync store limits (enforced by sanitizeItems). */
+var MAX_KEYS = 64;
+var MAX_KEY_LEN = 128;
+/* How far into the future a client timestamp may sit before it is clamped to
+   server time (see clampTs). Must match CLOCK_SKEW_TOLERANCE_MS in index.html. */
+var FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+
 /* ---------- CORS ---------- */
 /* ALLOWED_ORIGIN is a comma-separated list of origins allowed to call the
    API (default: the production page origin). The response echoes the
@@ -42,6 +49,10 @@ function corsHeaders(origin) {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    /* index.html reads the Date header to spot a skewed device clock; Date is
+       not CORS-safelisted, so expose it explicitly (a same-origin request can
+       read it anyway — this keeps the check working cross-origin too). */
+    'Access-Control-Expose-Headers': 'Date',
     'Vary': 'Origin',
     'Cache-Control': 'no-store'
   };
@@ -150,6 +161,52 @@ function recordFailure(req) {
 function clearRateLimit(req) {
   var ip = (req.headers && (req.headers['x-forwarded-for'] || req.headers['x-real-ip'])) || 'unknown';
   attempts.delete(ip);
+}
+
+/* ---------- sync payload (validation + clock-skew guard) ---------- */
+/* Timestamps in this store come from the CLIENT, and that is deliberate: a
+   device that edited offline must keep its own, older, timestamp so its stale
+   edit loses to newer server data (see upsertAll). The price is that
+   last-write-wins now depends on client clocks, and a wrong clock fails
+   SILENTLY — a device running fast stamps its writes in the future and wins
+   every conflict until real time catches up; a device running slow loses every
+   conflict and has its edits overwritten by the next pull. No error, no log.
+
+   clampTs bounds the fast-clock case: a timestamp more than
+   FUTURE_TOLERANCE_MS ahead of server time is pulled back to server time. The
+   write still lands (it is the latest real-time edit) but it stops poisoning
+   the timeline for hours or days afterwards. Past timestamps are left alone on
+   purpose — losing to newer data is exactly what an offline device should do. */
+function clampTs(ts, now) {
+  return ts > now + FUTURE_TOLERANCE_MS ? now : ts;
+}
+/* Sanitize the raw `items` object of POST /api/data.
+   Returns { items, adjusted, error }: `items` is the map to write, `adjusted`
+   maps key -> { from, to } for the keys whose timestamp was clamped (the
+   caller reports them so the client can warn), and `error` is 'bad_items' /
+   'too_many_keys' / null. Invalid entries are dropped, not fatal, unless
+   nothing usable or too much is left — that matches the old inline checks. */
+function sanitizeItems(raw, now) {
+  var bad = { items: null, adjusted: null, error: 'bad_items' };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad;
+  var reference = Number.isFinite(now) ? now : Date.now();
+  var items = {};
+  var adjusted = {};
+  Object.keys(raw).forEach(function (k) {
+    if (k.length === 0 || k.length > MAX_KEY_LEN) return;
+    var it = raw[k];
+    if (!it || typeof it !== 'object' || Array.isArray(it)) return;
+    var ts = Number(it.ts);
+    if (!Number.isFinite(ts)) return;
+    var floored = Math.floor(ts);
+    var safe = clampTs(floored, reference);
+    if (safe !== floored) adjusted[k] = { from: floored, to: safe };
+    items[k] = { v: it.v === undefined ? null : it.v, ts: safe };
+  });
+  var keys = Object.keys(items);
+  if (keys.length === 0) return bad;
+  if (keys.length > MAX_KEYS) return { items: null, adjusted: null, error: 'too_many_keys' };
+  return { items: items, adjusted: adjusted, error: null };
 }
 
 /* ---------- kv store ---------- */
@@ -299,6 +356,9 @@ module.exports = {
   bearerToken: bearerToken,
   recordFailure: recordFailure,
   clearRateLimit: clearRateLimit,
+  clampTs: clampTs,
+  sanitizeItems: sanitizeItems,
+  FUTURE_TOLERANCE_MS: FUTURE_TOLERANCE_MS,
   getAll: getAll,
   upsertAll: upsertAll,
   getChatSession: getChatSession,

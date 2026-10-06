@@ -214,7 +214,10 @@ after that the device holds a token and behaves exactly as before.
   bookmarks, history — including resetting a timer, which updates the list to an idle
   state) schedules a debounced POST
   to the API. Offline? The change stays local and is retried on the next change or
-  load. Server-side last-write-wins protects against a stale offline device.
+  load. Server-side last-write-wins protects against a stale offline device — and a
+  timestamp more than 5 minutes in the future is **clamped to server time** first, so
+  a device with a fast clock cannot poison the timeline (see *Sync indicator + clock
+  skew* below).
 - **Timers sync too**: `start.timers` stores absolute end/start timestamps per timer,
   so a countdown started on one device resumes on another with the correct remaining
   time — and every named timer, its kind, its configured duration, which timer owns the
@@ -226,9 +229,19 @@ after that the device holds a token and behaves exactly as before.
   `start.theme`, which is device-specific (each device keeps its own
   system/light/dark choice in `localStorage`). The sync bookkeeping itself lives
   in `localStorage` under `start.sync.ts` (per-key timestamps) and is never uploaded.
-- **No visible chrome (connected mode)**: no status indicators — the page looks identical.
-  Sync failures are silent (console) and self-healing. (The one exception is
-  **local mode**, which intentionally shows a banner + a permanent warning icon.)
+- **Sync indicator + clock skew**: the typing bar carries a small icon — a spinning
+  cycle-arrow while a pull is in flight, then a tick (success) or a warning (failure)
+  that flashes and fades. Everything else about sync is silent (console only) and
+  self-healing. The one exception is a wrong clock: conflict resolution is last-write-wins on
+  **client** timestamps, so a device running **fast** stamps its writes in the future
+  and wins every conflict until real time catches up, while a device running **slow**
+  loses every conflict and has its edits overwritten by the next pull. Neither reports
+  anything. So the page compares its own clock against the server's `Date` header and
+  flashes the warning (plus a console line) when they differ by more than 5 minutes —
+  fix the system clock on that device. Independently, the API clamps any timestamp more
+  than 5 minutes in the future back to server time, which bounds the fast-clock case
+  server-side; a slow clock can only be reported, never corrected. (Local mode keeps its
+  own banner + permanent warning icon.)
 
 ## AI chat (`j` from command mode)
 
